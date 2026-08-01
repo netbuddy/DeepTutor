@@ -95,6 +95,34 @@ function BookPageInner() {
     string | null
   >(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [cellQuestion, setCellQuestion] = useState("");
+
+  // 可运行单元格上的「问助教」按钮派发这个事件，带着那一格的代码与运行结果。
+  useEffect(() => {
+    function onAskAboutCell(event: Event) {
+      const detail = (event as CustomEvent).detail || {};
+      const lines = [
+        `我在看${detail.cellIndex ? `第 ${detail.cellIndex} 格` : "这一格"}代码：`,
+        "```python",
+        String(detail.code || "").slice(0, 2000),
+        "```",
+      ];
+      if (detail.error) {
+        lines.push(`它报错了：${detail.error}`, "这是什么原因，该怎么改？");
+      } else if (detail.stdout || detail.textResult) {
+        lines.push(
+          `运行结果是：${String(detail.stdout || detail.textResult).slice(0, 800)}`,
+          "请解释这段代码做了什么，结果说明了什么。",
+        );
+      } else {
+        lines.push("请解释这段代码做了什么。");
+      }
+      setCellQuestion(lines.join("\n"));
+      setChatOpen(true);
+    }
+    window.addEventListener("ext:ask-about-cell", onAskAboutCell);
+    return () => window.removeEventListener("ext:ask-about-cell", onAskAboutCell);
+  }, []);
   const [rebuildingBook, setRebuildingBook] = useState(false);
 
   // Phase 5 — live BookEngine progress timeline state.
@@ -609,6 +637,7 @@ function BookPageInner() {
             onSessionResolved={(sessionId) =>
               void handlePageChatSession(sessionId)
             }
+            prefill={cellQuestion}
           />
         )}
       </main>

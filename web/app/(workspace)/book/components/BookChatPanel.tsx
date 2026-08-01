@@ -63,6 +63,8 @@ export interface BookChatPanelProps {
   onClose: () => void;
   initialSessionId?: string | null;
   onSessionResolved?: (sessionId: string) => void;
+  /** 从某个可运行单元格带过来的问题，打开面板时预填进输入框。 */
+  prefill?: string;
 }
 
 function attachmentTypeFor(file: File): PendingAttachment["type"] | null {
@@ -100,11 +102,18 @@ export default function BookChatPanel({
   onClose,
   initialSessionId = null,
   onSessionResolved,
+  prefill,
 }: BookChatPanelProps) {
   const { t } = useTranslation();
   const { language: appLanguage } = useAppShell();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+
+  // 学生在某一格点了「问助教」：把带上下文的问题填进输入框，光标停在末尾，
+  // 让他可以先补一句自己的疑问再发出去。
+  useEffect(() => {
+    if (prefill) setInput(prefill);
+  }, [prefill]);
   const [busy, setBusy] = useState(false);
   const [width, setWidth] = useState(360);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
