@@ -5,26 +5,40 @@
 
 ## 现在能做什么
 
-把一个课程仓库（例如 microsoft/ML-For-Beginners）导进来，它会变成 DeepTutor 里的
-一本书：模块成章、课时成页，讲义是正文，notebook 的每个代码格都是页面上一个可以
-**当场运行**的单元格——代码能改，输出（文字、pandas 表格、图表、报错回溯）就地显示，
-点「问助教」会把这一格的代码和运行结果一起带进书页自带的对话面板。
+侧栏的**课程**页可以把外部课程取进来。填一个 Git 仓库地址（或服务器上的一个目录），
+它会摊成三样东西：
+
+| 产出 | 是什么 | 学生在哪儿用 |
+|---|---|---|
+| 课程目录 | 原始文件，放在 `data/user/courses/<标识>/` | 执行容器只读挂载这一份，跑代码时的工作目录在里面 |
+| 一本书 | 章节目录加可运行的页面 | 书籍页里读和练 |
+| 一个检索索引 | 全课正文的知识库，自动绑在书上 | 书页对话面板据此翻遍整门课回答问题 |
+
+书页里的每段代码都能**当场运行**：代码可改，输出（文字、pandas 表格、图表、报错回溯）
+就地显示，点「问助教」会把这一格的代码和运行结果一起带进对话面板。
 
 代码跑在一个独立容器里的长驻内核上：同一页共用一个内核，所以靠前的格子定义的变量
 靠后的格子能直接用。学生跳着运行会撞上「变量没定义」，所以每格都有一个
 「从头跑到这」，会先把前面的格子依次补跑一遍。
 
-导入一门课：
+认得两种课程排布，加一种只要在 `deeptutor_ext/course/layouts.py` 里加一个识别函数：
+
+* **讲义配 notebook**：一层模块目录，每课一个子目录，里面是 README 加一份 `.ipynb`
+  （microsoft/ML-For-Beginners 是这一类）；
+* **目录树配正文**：一份 `_toctree.yml` 驱动一堆 `.mdx`，代码写在围栏里
+  （huggingface 的课程是这一类）。
+
+命令行也能导（页面做的是同一件事）：
 
 ```bash
-# 课程必须放在 data/user/courses 下——内核容器只挂了这一个目录（只读），
-# 放别处页面能显示但代码跑不起来。
 cd ~/DeepTutor-ext
-~/DeepTutor-src/.venv/bin/python bin/import-course.py \
-    ~/DeepTutor-src/data/user/courses/ml-for-beginners
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"origin":"https://github.com/huggingface/course.git","language":"zh","build_index":true}' \
+  http://127.0.0.1:9188/api/v1/ext/course/create
 ```
 
-重复导入同一个课程是覆盖，不会多出一本书。
+重复导入同一门课是覆盖，不会多出一本书。外部课程里读不了的文件（Git LFS 指针、
+空文件、坏编码）会被跳过并计数，不会让整门课导入失败。
 
 ## 两个目录的分工
 
@@ -76,6 +90,16 @@ make logs            # 跟踪日志
 ~/DeepTutor-src/.venv/bin/python bin/smoke-kernel.py
 ```
 
+执行容器的镜像是我们自己构建的（`kernel-image/Dockerfile`）：官方科学计算镜像之外
+还带 transformers、torch 的 CPU 版、datasets，因为 Hugging Face 的课程从第一章就要用。
+第一次构建要下载一两 GB：
+
+```bash
+make kernel-build && make kernel-stop && make kernel-start
+```
+
+没构建过也能跑——启动脚本会退回官方科学计算镜像，课程里纯 pandas/sklearn 的部分照样能用。
+
 `make verify` 检查五件事：站点钩子在不在、宿主的三个符号还在不在、扩展工具有没有真的
 进注册表、该自动挂载的有没有登记、沙箱能不能真的执行命令。
 
@@ -100,10 +124,12 @@ make upgrade VERSION=v1.5.8
    `CodeBlock.tsx` 与 `BlockRenderer.tsx`）；
 2. 单元格的「问助教」接进书页对话面板（改 `page.tsx` 与 `BookChatPanel.tsx`）；
 3. 网页端默认界面语言改成中文（改 `app-shell-storage.ts`）——DeepTutor 的回答语言
-   跟着界面语言走，上游默认会让每个新浏览器落到英文。
+   跟着界面语言走，上游默认会让每个新浏览器落到英文；
+4. 课程模块的前端（新增 `app/(workspace)/course/page.tsx`，改 `SidebarShell.tsx`
+   加导航入口，两份 `locales/*/app.json` 各补两条文案）。
 
-合计五个文件、四百来行，其中三百多行是新增的独立组件，真正嵌进上游代码的只有
-四处小改动。升级时 `git rebase --onto <新版本> upstream-base local`，冲突时 make
+合计十个文件、八百来行，其中六百多行是新增的独立文件，真正嵌进上游代码的只有
+六处小改动。升级时 `git rebase --onto <新版本> upstream-base local`，冲突时 make
 会停下来并打印接下来该敲什么。`frontend-patches/` 下留着生成这些改动的脚本，
 上游把某处改得对不上时，改脚本比手工重做更省事。
 

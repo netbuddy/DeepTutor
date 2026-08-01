@@ -24,6 +24,7 @@ from deeptutor_ext.kernel import config as kernel_config
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+course_router = APIRouter()
 
 
 def _courses_root() -> Path:
@@ -182,6 +183,101 @@ async def kernel_status() -> dict:
     }
 
 
+# ── 课程模块 ────────────────────────────────────────────────────────────────
+
+
+class CreateCourseRequest(BaseModel):
+    # Git 仓库地址，或本机上的一个目录
+    origin: str = Field(..., min_length=1)
+    title: str = Field(default="")
+    slug: str = Field(default="")
+    language: str = Field(default="zh")
+    branch: str = Field(default="")
+    replace: bool = False
+    # 导入后顺带建检索索引。这一步要把全课正文过一遍向量化，慢，所以默认不做。
+    build_index: bool = False
+
+
+class DeleteCourseRequest(BaseModel):
+    drop_book: bool = True
+    drop_kb: bool = True
+
+
+@course_router.get("/list")
+async def list_courses() -> dict:
+    from deeptutor_ext.course import get_course_service
+
+    return {"courses": [record.to_dict() for record in get_course_service().list_courses()]}
+
+
+@course_router.post("/create")
+async def create_course(body: CreateCourseRequest) -> dict:
+    """取一门课进来并导成书。可选顺带建检索索引。"""
+    import asyncio
+
+    from deeptutor_ext.course import SourceError, get_course_service
+
+    service = get_course_service()
+    try:
+        # 克隆和解析都是同步的重活，放线程里跑，别把事件循环占住。
+        record = await asyncio.to_thread(
+            service.create,
+            body.origin,
+            title=body.title,
+            slug=body.slug,
+            language=body.language,
+            branch=body.branch,
+            replace=body.replace,
+        )
+    except SourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("导入课程失败")
+        raise HTTPException(status_code=500, detail=f"导入失败：{exc}") from exc
+
+    if body.build_index:
+        try:
+            await service.build_index(record.slug)
+            record = service.get(record.slug) or record
+        except Exception as exc:
+            logger.exception("建检索索引失败")
+            return {
+                "course": record.to_dict(),
+                "index_error": f"课程已导入，但建检索索引失败：{exc}",
+            }
+    return {"course": record.to_dict()}
+
+
+@course_router.post("/{slug}/index")
+async def build_course_index(slug: str) -> dict:
+    """给这门课建检索索引并绑到它的书上。已经有索引就重建。"""
+    from deeptutor_ext.course import SourceError, get_course_service
+
+    service = get_course_service()
+    try:
+        kb_name = await service.build_index(slug)
+    except SourceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("建检索索引失败")
+        raise HTTPException(status_code=500, detail=f"建索引失败：{exc}") from exc
+    record = service.get(slug)
+    return {"kb_name": kb_name, "course": record.to_dict() if record else None}
+
+
+@course_router.post("/{slug}/delete")
+async def delete_course(slug: str, body: DeleteCourseRequest) -> dict:
+    from deeptutor_ext.course import SourceError, get_course_service
+
+    try:
+        outcome = get_course_service().delete(
+            slug, drop_book=body.drop_book, drop_kb=body.drop_kb
+        )
+    except SourceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"deleted": outcome}
+
+
 def attach(app) -> None:
     """把这些路由挂到宿主的应用上。由站点钩子在宿主应用加载完成后调用。"""
     if any(getattr(route, "path", "").startswith("/api/v1/ext/notebook") for route in app.routes):
@@ -202,7 +298,13 @@ def attach(app) -> None:
         tags=["ext-notebook"],
         dependencies=dependencies,
     )
-    logger.info("扩展接口已挂载：/api/v1/ext/notebook")
+    app.include_router(
+        course_router,
+        prefix="/api/v1/ext/course",
+        tags=["ext-course"],
+        dependencies=dependencies,
+    )
+    logger.info("扩展接口已挂载：/api/v1/ext/notebook 与 /api/v1/ext/course")
 
 
 __all__ = ["attach", "router"]

@@ -34,7 +34,7 @@ LOCAL_BRANCH := local
 BASE_TAG     := upstream-base
 
 .PHONY: help install start stop restart status health logs verify upgrade patches wait-port \
-        kernel-start kernel-stop kernel-status kernel-logs
+        kernel-start kernel-stop kernel-status kernel-logs kernel-build
 
 help:
 	@echo "make install | start | stop | restart | status | health | verify"
@@ -114,6 +114,12 @@ logs:
 	@tail -f $(LOG)
 
 # ── 学生代码的执行容器 ──────────────────────────────────────────────────
+
+# 构建执行环境的镜像：科学计算库之外还带 transformers 那一套，
+# 因为 Hugging Face 的课程从第一章就要用。要下载一两 GB，第一次构建慢。
+kernel-build:
+	@docker build -t deeptutor-kernel:local $(EXT)/kernel-image
+	@echo "镜像已构建。执行 make kernel-stop && make kernel-start 换过去。"
 
 kernel-start:
 	@$(EXT)/bin/kernel-container.sh start

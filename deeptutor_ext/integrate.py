@@ -63,6 +63,12 @@ def _attach_api_routes(module) -> None:
     attach(app)
 
 
+def _relax_nltk_guard(_module) -> None:
+    from deeptutor_ext.compat import relax_nltk_cwd_guard
+
+    relax_nltk_cwd_guard()
+
+
 def install() -> None:
     """登记接入动作。可以重复调用，只有第一次生效。"""
     global _installed
@@ -71,6 +77,8 @@ def install() -> None:
     _installed = True
     after_import("deeptutor.tools.builtin", _extend_builtin_tools)
     after_import("deeptutor.api.main", _attach_api_routes)
+    # nltk 装的那个拦截器会误伤 site-packages 里的库，见 compat 模块的说明。
+    after_import("nltk.inisec", _relax_nltk_guard)
 
 
 __all__ = ["install", "EXTENSION_TOOL_TYPES", "AUTO_MOUNTED_TOOL_NAMES"]

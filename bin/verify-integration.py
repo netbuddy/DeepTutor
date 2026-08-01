@@ -102,6 +102,29 @@ def check_tools_registered() -> None:
     )
 
 
+def check_nltk_guard() -> None:
+    """nltk 的工作目录拦截器在源码部署下会误伤，确认放宽补丁生效。"""
+    try:
+        import nltk  # noqa: F401  触发拦截器安装
+        import sys
+
+        from deeptutor_ext.compat import relax_nltk_cwd_guard
+
+        relax_nltk_cwd_guard()
+        has_finder = any(type(f).__name__ == "NLTKSafeImportFinder" for f in sys.meta_path)
+        if not has_finder:
+            check(True, "nltk 没有装工作目录拦截器", "这个版本不需要放宽")
+            return
+        import importlib
+
+        importlib.import_module("regex")
+        check(True, "nltk 的工作目录拦截已放宽", "site-packages 里的库能正常导入")
+    except ImportError as exc:
+        check(False, "nltk 的工作目录拦截已放宽", f"仍被拦：{exc}")
+    except Exception as exc:
+        check(False, "nltk 的工作目录拦截已放宽", f"{type(exc).__name__}: {exc}")
+
+
 def check_sandbox() -> None:
     """真跑一条命令，而不是信宿主那个只看 error 字段的探针。"""
     try:
@@ -132,6 +155,7 @@ def main() -> int:
     check_sitehook()
     check_host_contract()
     check_tools_registered()
+    check_nltk_guard()
     check_sandbox()
 
     try:

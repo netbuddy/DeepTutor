@@ -17,6 +17,15 @@ from typing import Any
 _MAX_SAVED_OUTPUT_CHARS = 1200
 
 
+class NotebookParseError(RuntimeError):
+    """这份 .ipynb 读不了。
+
+    外部课程里什么样的文件都有：Git LFS 只签出了指针、文件是空的、编码坏掉、
+    或者干脆不是 JSON。导入一门课不该因为其中一份坏文件就整个失败，所以这里抛一个
+    专门的异常，让上层跳过它、继续导入其余内容。
+    """
+
+
 @dataclass
 class NotebookCell:
     index: int  # 从 1 开始，与界面上显示的编号一致
@@ -71,7 +80,12 @@ def _saved_output(outputs: list[dict[str, Any]]) -> tuple[str, int]:
 
 def parse_notebook(path: str | Path) -> ParsedNotebook:
     path = Path(path)
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise NotebookParseError(f"{path.name} 读不了：{type(exc).__name__}") from exc
+    if not isinstance(raw, dict) or "cells" not in raw:
+        raise NotebookParseError(f"{path.name} 不是一份 notebook（缺少 cells）")
     language = (
         (raw.get("metadata") or {}).get("kernelspec", {}).get("language")
         or (raw.get("metadata") or {}).get("language_info", {}).get("name")
@@ -120,4 +134,10 @@ def to_teaching_markdown(parsed: ParsedNotebook) -> str:
     return "\n\n".join(parts) + "\n"
 
 
-__all__ = ["NotebookCell", "ParsedNotebook", "parse_notebook", "to_teaching_markdown"]
+__all__ = [
+    "NotebookCell",
+    "NotebookParseError",
+    "ParsedNotebook",
+    "parse_notebook",
+    "to_teaching_markdown",
+]

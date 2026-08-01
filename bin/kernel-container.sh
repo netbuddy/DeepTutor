@@ -13,7 +13,10 @@
 set -euo pipefail
 
 NAME="deeptutor-kernel"
-IMAGE="quay.io/jupyter/scipy-notebook:latest"
+# 默认用我们自己构建的镜像（科学计算库之外还带 transformers 那一套）。
+# 还没构建过就退回官方科学计算镜像——课程里纯 pandas/sklearn 的部分照样能跑。
+IMAGE="${DEEPTUTOR_KERNEL_IMAGE:-deeptutor-kernel:local}"
+FALLBACK_IMAGE="quay.io/jupyter/scipy-notebook:latest"
 PORT="9189"
 EXT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOKEN_FILE="${EXT_DIR}/.kernel-token"
@@ -43,8 +46,14 @@ cmd_start() {
     exit 1
   fi
 
-  mkdir -p "${WORKSPACE_DIR}" "${COURSES_DIR}"
+  mkdir -p "${WORKSPACE_DIR}" "${COURSES_DIR}" "${WORKSPACE_DIR}/.hf-cache"
   docker rm -f "${NAME}" >/dev/null 2>&1 || true
+
+  if ! docker image inspect "${IMAGE}" >/dev/null 2>&1; then
+    echo "还没构建 ${IMAGE}，先用 ${FALLBACK_IMAGE} 起。"
+    echo "（需要 transformers 那一套时执行 make kernel-build 再重启容器）"
+    IMAGE="${FALLBACK_IMAGE}"
+  fi
 
   local token
   token="$(openssl rand -hex 24)"
@@ -56,6 +65,7 @@ cmd_start() {
     -p "127.0.0.1:${PORT}:8888" \
     -v "${WORKSPACE_DIR}:${WORKSPACE_DIR}" \
     -v "${COURSES_DIR}:${COURSES_DIR}:ro" \
+    -e "HF_HOME=${WORKSPACE_DIR}/.hf-cache" \
     --memory 4g --cpus 2 --pids-limit 256 \
     --user 1000:100 \
     "${IMAGE}" \
