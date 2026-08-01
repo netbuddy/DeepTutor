@@ -3,6 +3,29 @@
 这个目录放我们自己给 DeepTutor 加的功能。它与 DeepTutor 的源码是分开的两棵树，
 目的只有一个：**上游发新版时，我们的东西能快速接回去。**
 
+## 现在能做什么
+
+把一个课程仓库（例如 microsoft/ML-For-Beginners）导进来，它会变成 DeepTutor 里的
+一本书：模块成章、课时成页，讲义是正文，notebook 的每个代码格都是页面上一个可以
+**当场运行**的单元格——代码能改，输出（文字、pandas 表格、图表、报错回溯）就地显示，
+点「问助教」会把这一格的代码和运行结果一起带进书页自带的对话面板。
+
+代码跑在一个独立容器里的长驻内核上：同一页共用一个内核，所以靠前的格子定义的变量
+靠后的格子能直接用。学生跳着运行会撞上「变量没定义」，所以每格都有一个
+「从头跑到这」，会先把前面的格子依次补跑一遍。
+
+导入一门课：
+
+```bash
+# 课程必须放在 data/user/courses 下——内核容器只挂了这一个目录（只读），
+# 放别处页面能显示但代码跑不起来。
+cd ~/DeepTutor-ext
+~/DeepTutor-src/.venv/bin/python bin/import-course.py \
+    ~/DeepTutor-src/data/user/courses/ml-for-beginners
+```
+
+重复导入同一个课程是覆盖，不会多出一本书。
+
 ## 两个目录的分工
 
 | 目录 | 是什么 | 归谁改 |
@@ -35,14 +58,22 @@ DeepTutor 没有给工具留插件入口（源码里那个 `deeptutor.plugins.lo
 ```bash
 cd ~/DeepTutor-ext
 
-make install    # 首次安装扩展包与站点钩子
-make start      # 启动（前端 9187，后端 9188）
+make install         # 首次安装扩展包与站点钩子
+make kernel-start    # 启动学生代码的执行容器（必须先起，否则页面上跑不了代码）
+make start           # 启动 DeepTutor（前端 9187，后端 9188）
 make stop
 make restart
-make status     # 版本、进程、端口
-make health     # 前后端各请求一次
-make verify     # 接入自检，升级后必跑
-make logs       # 跟踪日志
+make status          # 版本、进程、端口
+make health          # 前后端各请求一次
+make verify          # 接入自检，升级后必跑
+make kernel-status   # 执行容器的状态与活跃内核数
+make logs            # 跟踪日志
+```
+
+冒烟测试内核那一侧（跨格状态、图片落盘与公开地址、表格、报错、重置）：
+
+```bash
+~/DeepTutor-src/.venv/bin/python bin/smoke-kernel.py
 ```
 
 `make verify` 检查五件事：站点钩子在不在、宿主的三个符号还在不在、扩展工具有没有真的
@@ -62,11 +93,19 @@ make upgrade VERSION=v1.5.8
 它按顺序做七件事：停服务 → 从上游取新标签 → 把本地源码改动变基到新版本 →
 重装后端依赖 → 重装前端依赖 → 重新安装扩展并跑自检 → 启动。
 
-只有第三步可能需要人工介入。当前没有任何本地源码改动，这一步会退化成简单的切换标签；
-将来如果为了做 notebook 界面而必须改前端，改动会提交在 `~/DeepTutor-src` 的 `local`
-分支上，`upstream-base` 这个本地标签记录它基于哪个上游版本，升级时用
-`git rebase --onto <新版本> upstream-base local` 变基。冲突时 make 会停下来并打印
-接下来该敲什么。
+只有第三步可能需要人工介入。本地源码改动目前有三笔，都在 `~/DeepTutor-src` 的 `local` 分支上，`upstream-base`
+这个本地标签记录它们基于哪个上游版本：
+
+1. 书页里的代码块按 payload 分派到可运行组件（新增 `RunnableCell.tsx`，改
+   `CodeBlock.tsx` 与 `BlockRenderer.tsx`）；
+2. 单元格的「问助教」接进书页对话面板（改 `page.tsx` 与 `BookChatPanel.tsx`）；
+3. 网页端默认界面语言改成中文（改 `app-shell-storage.ts`）——DeepTutor 的回答语言
+   跟着界面语言走，上游默认会让每个新浏览器落到英文。
+
+合计五个文件、四百来行，其中三百多行是新增的独立组件，真正嵌进上游代码的只有
+四处小改动。升级时 `git rebase --onto <新版本> upstream-base local`，冲突时 make
+会停下来并打印接下来该敲什么。`frontend-patches/` 下留着生成这些改动的脚本，
+上游把某处改得对不上时，改脚本比手工重做更省事。
 
 `make patches` 把 `local` 分支上的提交导出成补丁文件放进 `patches/`，便于审阅与备份——
 变基之后提交哈希会变，有一份补丁在手更踏实。
@@ -81,6 +120,7 @@ make upgrade VERSION=v1.5.8
 | 9184 | 可行性验证时起的 Jupyter 容器，只绑本机回环 |
 | 9185 | novnc 的 websockify，**不是我们的，别占** |
 | 9187 / 9188 | 源码版 DeepTutor（前端／后端） |
+| 9189 | 学生代码的执行容器，只绑本机回环，局域网访问不到 |
 
 改端口要同时改 `~/DeepTutor-src/data/user/settings/system.json`。DeepTutor 启动时会
 自己检测端口冲突并明确报错退出，不会默默漂移到别的端口。

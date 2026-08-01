@@ -52,6 +52,17 @@ def _extend_builtin_tools(module) -> None:
     logger.info("扩展工具已接入：%s", "、".join(added))
 
 
+def _attach_api_routes(module) -> None:
+    """在宿主的 FastAPI 应用装配完成后追加我们的接口。"""
+    app = getattr(module, "app", None)
+    if app is None:
+        logger.warning("宿主的 api.main 里没有 app 对象，扩展接口未挂载")
+        return
+    from deeptutor_ext.api import attach
+
+    attach(app)
+
+
 def install() -> None:
     """登记接入动作。可以重复调用，只有第一次生效。"""
     global _installed
@@ -59,6 +70,7 @@ def install() -> None:
         return
     _installed = True
     after_import("deeptutor.tools.builtin", _extend_builtin_tools)
+    after_import("deeptutor.api.main", _attach_api_routes)
 
 
 __all__ = ["install", "EXTENSION_TOOL_TYPES", "AUTO_MOUNTED_TOOL_NAMES"]
