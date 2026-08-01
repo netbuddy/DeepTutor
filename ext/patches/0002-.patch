@@ -1,0 +1,99 @@
+From c479b61681d8c4528b520993eeade97400530836 Mon Sep 17 00:00:00 2001
+From: yun <netbuddy2050@gmail.com>
+Date: Sat, 1 Aug 2026 00:44:12 -0700
+Subject: [PATCH 2/4] =?UTF-8?q?=E5=8D=95=E5=85=83=E6=A0=BC=E7=9A=84?=
+ =?UTF-8?q?=E3=80=8C=E9=97=AE=E5=8A=A9=E6=95=99=E3=80=8D=E6=8E=A5=E8=BF=9B?=
+ =?UTF-8?q?=E4=B9=A6=E9=A1=B5=E5=AF=B9=E8=AF=9D=E9=9D=A2=E6=9D=BF=EF=BC=9A?=
+ =?UTF-8?q?=E5=B8=A6=E4=B8=8A=E4=BB=A3=E7=A0=81=E4=B8=8E=E8=BF=90=E8=A1=8C?=
+ =?UTF-8?q?=E7=BB=93=E6=9E=9C=E9=A2=84=E5=A1=AB=E6=8F=90=E9=97=AE?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../book/components/BookChatPanel.tsx         |  9 ++++++
+ web/app/(workspace)/book/page.tsx             | 29 +++++++++++++++++++
+ 2 files changed, 38 insertions(+)
+
+diff --git a/web/app/(workspace)/book/components/BookChatPanel.tsx b/web/app/(workspace)/book/components/BookChatPanel.tsx
+index 8466907..70036b8 100644
+--- a/web/app/(workspace)/book/components/BookChatPanel.tsx
++++ b/web/app/(workspace)/book/components/BookChatPanel.tsx
+@@ -63,6 +63,8 @@ export interface BookChatPanelProps {
+   onClose: () => void;
+   initialSessionId?: string | null;
+   onSessionResolved?: (sessionId: string) => void;
++  /** 从某个可运行单元格带过来的问题，打开面板时预填进输入框。 */
++  prefill?: string;
+ }
+ 
+ function attachmentTypeFor(file: File): PendingAttachment["type"] | null {
+@@ -100,11 +102,18 @@ export default function BookChatPanel({
+   onClose,
+   initialSessionId = null,
+   onSessionResolved,
++  prefill,
+ }: BookChatPanelProps) {
+   const { t } = useTranslation();
+   const { language: appLanguage } = useAppShell();
+   const [messages, setMessages] = useState<ChatMessage[]>([]);
+   const [input, setInput] = useState("");
++
++  // 学生在某一格点了「问助教」：把带上下文的问题填进输入框，光标停在末尾，
++  // 让他可以先补一句自己的疑问再发出去。
++  useEffect(() => {
++    if (prefill) setInput(prefill);
++  }, [prefill]);
+   const [busy, setBusy] = useState(false);
+   const [width, setWidth] = useState(360);
+   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+diff --git a/web/app/(workspace)/book/page.tsx b/web/app/(workspace)/book/page.tsx
+index ffc5b37..dacbb94 100644
+--- a/web/app/(workspace)/book/page.tsx
++++ b/web/app/(workspace)/book/page.tsx
+@@ -95,6 +95,34 @@ function BookPageInner() {
+     string | null
+   >(null);
+   const [chatOpen, setChatOpen] = useState(false);
++  const [cellQuestion, setCellQuestion] = useState("");
++
++  // 可运行单元格上的「问助教」按钮派发这个事件，带着那一格的代码与运行结果。
++  useEffect(() => {
++    function onAskAboutCell(event: Event) {
++      const detail = (event as CustomEvent).detail || {};
++      const lines = [
++        `我在看${detail.cellIndex ? `第 ${detail.cellIndex} 格` : "这一格"}代码：`,
++        "```python",
++        String(detail.code || "").slice(0, 2000),
++        "```",
++      ];
++      if (detail.error) {
++        lines.push(`它报错了：${detail.error}`, "这是什么原因，该怎么改？");
++      } else if (detail.stdout || detail.textResult) {
++        lines.push(
++          `运行结果是：${String(detail.stdout || detail.textResult).slice(0, 800)}`,
++          "请解释这段代码做了什么，结果说明了什么。",
++        );
++      } else {
++        lines.push("请解释这段代码做了什么。");
++      }
++      setCellQuestion(lines.join("\n"));
++      setChatOpen(true);
++    }
++    window.addEventListener("ext:ask-about-cell", onAskAboutCell);
++    return () => window.removeEventListener("ext:ask-about-cell", onAskAboutCell);
++  }, []);
+   const [rebuildingBook, setRebuildingBook] = useState(false);
+ 
+   // Phase 5 — live BookEngine progress timeline state.
+@@ -609,6 +637,7 @@ function BookPageInner() {
+             onSessionResolved={(sessionId) =>
+               void handlePageChatSession(sessionId)
+             }
++            prefill={cellQuestion}
+           />
+         )}
+       </main>
+-- 
+2.43.0
+
