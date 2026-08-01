@@ -88,7 +88,14 @@ cmd_status() {
   if docker ps --filter "name=^${NAME}$" --format '{{.Names}}\t{{.Status}}' | grep -q .; then
     docker ps --filter "name=^${NAME}$" --format '  容器 {{.Names}} · {{.Status}}'
     echo -n "  服务应答： "
-    curl -s -o /dev/null -w "HTTP %{http_code}\n" -m 5 "http://127.0.0.1:${PORT}/api/status" || echo "无应答"
+    # 带上口令再查：不带的话 Jupyter 一律回 403，看起来像故障，其实只是没鉴权。
+    if [ -r "${TOKEN_FILE}" ]; then
+      curl -s -o /dev/null -w "HTTP %{http_code}\n" -m 5 \
+        -H "Authorization: token $(cat "${TOKEN_FILE}")" \
+        "http://127.0.0.1:${PORT}/api/status" || echo "无应答"
+    else
+      echo "口令文件不存在，无法查询"
+    fi
     echo -n "  活跃内核数： "
     if [ -r "${TOKEN_FILE}" ]; then
       curl -s -m 5 -H "Authorization: token $(cat "${TOKEN_FILE}")" \
