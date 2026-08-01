@@ -162,7 +162,6 @@ make upgrade VERSION=v1.5.8
 | 9185 | novnc 的 websockify，**不是我们的，别占** |
 | 9187 / 9188 | 源码版 DeepTutor（前端／后端） |
 | 9189 | 学生代码的执行容器，只绑本机回环，局域网访问不到 |
-| 9190 | 使用手册的静态文件服务 |
 
 改端口要同时改 `~/DeepTutor-src/data/user/settings/system.json`。DeepTutor 启动时会
 自己检测端口冲突并明确报错退出，不会默默漂移到别的端口。

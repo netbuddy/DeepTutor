@@ -24,11 +24,9 @@ DEEPTUTOR  := $(SRC)/.venv/bin/deeptutor
 FRONT_PORT := 9187
 BACK_PORT  := 9188
 LAN_IP     := 192.168.213.24
-MANUAL_PORT := 9190
 LOG_DIR    := $(EXT)/logs
 LOG        := $(LOG_DIR)/deeptutor.log
 PIDFILE    := $(LOG_DIR)/deeptutor.pid
-MANUAL_PID := $(LOG_DIR)/manual.pid
 
 # 本地源码改动放在 local 分支上；upstream-base 这个本地标签记录它基于哪个上游版本，
 # 升级时靠这两者做变基。没有本地改动时它们都不存在，升级退化成简单的切换标签。
@@ -36,8 +34,7 @@ LOCAL_BRANCH := local
 BASE_TAG     := upstream-base
 
 .PHONY: help install start stop restart status health logs verify upgrade patches wait-port \
-        kernel-start kernel-stop kernel-status kernel-logs kernel-build \
-        manual-start manual-stop
+        kernel-start kernel-stop kernel-status kernel-logs kernel-build
 
 help:
 	@echo "make install | start | stop | restart | status | health | verify"
@@ -47,7 +44,6 @@ help:
 	@echo ""
 	@echo "应用地址： http://$(LAN_IP):$(FRONT_PORT)/"
 	@echo "后端接口： http://$(LAN_IP):$(BACK_PORT)/docs"
-	@echo "使用手册： http://$(LAN_IP):$(MANUAL_PORT)/"
 
 # ── 安装 ────────────────────────────────────────────────────────────────
 
@@ -67,7 +63,6 @@ start:
 	@cd $(SRC) && setsid nohup $(DEEPTUTOR) start --home $(SRC) >> $(LOG) 2>&1 < /dev/null & \
 	  echo $$! > $(PIDFILE)
 	@$(MAKE) --no-print-directory wait-port
-	@$(MAKE) --no-print-directory manual-start
 	@echo "已启动： http://$(LAN_IP):$(FRONT_PORT)/"
 
 # 等后端端口进入监听状态。用后端而不是前端做判据，是因为前端在源码模式下跑的是
@@ -82,7 +77,7 @@ wait-port:
 	done; \
 	echo "等待 180 秒后端口 $(BACK_PORT) 仍未监听，最后 20 行日志："; tail -20 $(LOG); exit 1
 
-stop: manual-stop
+stop:
 	@if [ -f $(PIDFILE) ]; then \
 	  kill -TERM -- -$$(cat $(PIDFILE)) 2>/dev/null || kill -TERM $$(cat $(PIDFILE)) 2>/dev/null || true; \
 	  rm -f $(PIDFILE); \
@@ -107,40 +102,16 @@ status:
 	@echo "== 进程 =="
 	@pgrep -af "deeptutor start --home $(SRC)|next dev|uvicorn" || echo "  （没有运行中的进程）"
 	@echo "== 端口 =="
-	@ss -tlnp 2>/dev/null | grep -E ":($(FRONT_PORT)|$(BACK_PORT)|$(MANUAL_PORT)) " || echo "  （$(FRONT_PORT)、$(BACK_PORT) 与 $(MANUAL_PORT) 均未监听）"
+	@ss -tlnp 2>/dev/null | grep -E ":($(FRONT_PORT)|$(BACK_PORT)) " || echo "  （$(FRONT_PORT) 与 $(BACK_PORT) 均未监听）"
 
 health:
 	@echo -n "前端 http://$(LAN_IP):$(FRONT_PORT)/      -> "; \
 	  curl -s -o /dev/null -w "HTTP %{http_code}\n" -m 15 http://127.0.0.1:$(FRONT_PORT)/ || echo "请求失败"
 	@echo -n "后端 http://$(LAN_IP):$(BACK_PORT)/docs   -> "; \
 	  curl -s -o /dev/null -w "HTTP %{http_code}\n" -m 15 http://127.0.0.1:$(BACK_PORT)/docs || echo "请求失败"
-	@echo -n "手册 http://$(LAN_IP):$(MANUAL_PORT)/      -> "; \
-	  curl -s -o /dev/null -w "HTTP %{http_code}\n" -m 10 http://127.0.0.1:$(MANUAL_PORT)/ || echo "请求失败"
 
 logs:
 	@tail -f $(LOG)
-
-# ── 使用手册 ────────────────────────────────────────────────────────────
-#
-# 手册是一份自包含的 HTML，用 Python 自带的静态文件服务对局域网提供。
-# 不放进 DeepTutor 前端的静态目录，是因为那边的产物会随升级重建，放进去留不住。
-
-manual-start:
-	@if [ -f $(MANUAL_PID) ] && kill -0 $$(cat $(MANUAL_PID)) 2>/dev/null; then exit 0; fi
-	@if ss -tln | grep -q ":$(MANUAL_PORT) "; then \
-	  echo "端口 $(MANUAL_PORT) 已被占用，手册服务未启动"; exit 0; \
-	fi
-	@mkdir -p $(LOG_DIR)
-	@cd $(EXT)/docs/manual && setsid nohup python3 -m http.server $(MANUAL_PORT) --bind 0.0.0.0 \
-	   >> $(LOG_DIR)/manual.log 2>&1 < /dev/null & echo $$! > $(MANUAL_PID)
-	@sleep 1
-	@echo "使用手册： http://$(LAN_IP):$(MANUAL_PORT)/"
-
-manual-stop:
-	@if [ -f $(MANUAL_PID) ]; then \
-	  kill -TERM -- -$$(cat $(MANUAL_PID)) 2>/dev/null || kill -TERM $$(cat $(MANUAL_PID)) 2>/dev/null || true; \
-	  rm -f $(MANUAL_PID); \
-	fi
 
 # ── 学生代码的执行容器 ──────────────────────────────────────────────────
 

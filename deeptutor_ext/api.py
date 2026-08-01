@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from deeptutor_ext.kernel import KernelUnavailable, get_session_manager
@@ -76,6 +78,46 @@ def _runnable_blocks(page) -> list:
     return out
 
 
+def _block_language(block) -> str:
+    return str((block.payload or {}).get("language") or "python").strip().lower()
+
+
+def _go_snippet(page, target_block_id: str, override_code: str, session_key: str) -> str:
+    """把这一页到目标格为止的所有 Go 代码凑齐，生成一段编译并运行它的 Python。
+
+    Go 是编译型语言，一段代码要能跑，它依赖的类型和函数必须在同一次编译里都在场，
+    所以这里不存在「只跑这一格」——语义只能是「跑到这一格为止」。
+    """
+    from deeptutor_ext.kernel import build_runner_snippet, filename_for, has_main
+
+    files: dict[str, str] = {}
+    runnable = False
+    for index, block in enumerate(_runnable_blocks(page), start=1):
+        if _block_language(block) not in ("go", "golang"):
+            continue
+        code = str((block.payload or {}).get("code") or "")
+        if block.id == target_block_id and override_code.strip():
+            code = override_code
+        if not code.strip():
+            continue
+        files[filename_for(code, index)] = code
+        if has_main(code):
+            runnable = True
+        if block.id == target_block_id:
+            break
+
+    if not files:
+        raise HTTPException(status_code=400, detail="这一页没有可编译的 Go 代码。")
+
+    from deeptutor.services.path_service import get_path_service
+
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", session_key)[:64]
+    module_dir = str(
+        get_path_service().get_task_workspace("chat", f"notebook_{safe}") / "go_module"
+    )
+    return build_runner_snippet(files, module_dir=module_dir, runnable=runnable)
+
+
 def _resolve_cell(page, block_id: str) -> tuple[str, str]:
     """从页里取出这一格的源码与工作目录。"""
     block = page.block_by_id(block_id) if block_id else None
@@ -113,6 +155,23 @@ async def run_cell(body: RunCellRequest) -> dict:
     cwd = _validated_cwd(body.cwd or stored_cwd)
     session_key = _session_key(body.book_id, body.page_id)
     manager = get_session_manager()
+
+    # Go 走另一条路：它没有长驻状态，只能把到这一格为止的代码凑齐一起编译。
+    # 「运行」与「从头跑到这」对 Go 是同一件事，所以这里不分两种情况。
+    block = page.block_by_id(body.block_id)
+    if block is not None and _block_language(block) in ("go", "golang"):
+        snippet = _go_snippet(page, body.block_id, body.code, session_key)
+        try:
+            result = await manager.execute(
+                session_key, snippet, cwd=cwd, timeout_s=body.timeout_s or 180
+            )
+        except KernelUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        payload = result.to_dict()
+        payload["block_id"] = body.block_id
+        payload["language"] = "go"
+        payload["preceding"] = []
+        return payload
 
     preceding: list[dict] = []
     try:
@@ -263,6 +322,68 @@ async def build_course_index(slug: str) -> dict:
         raise HTTPException(status_code=500, detail=f"建索引失败：{exc}") from exc
     record = service.get(slug)
     return {"kb_name": kb_name, "course": record.to_dict() if record else None}
+
+
+@course_router.get("/{slug}/export")
+async def export_course_package(slug: str):
+    """把这门课打成一个包，供下载后拿到别的机器上导入。"""
+    import asyncio
+
+    from deeptutor_ext.course import SourceError, export_course
+
+    try:
+        path = await asyncio.to_thread(export_course, slug)
+    except SourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("打包课程失败")
+        raise HTTPException(status_code=500, detail=f"打包失败：{exc}") from exc
+    return FileResponse(
+        path,
+        media_type="application/gzip",
+        filename=path.name,
+    )
+
+
+@course_router.post("/import-package")
+async def import_course_package(
+    file: UploadFile = File(...),
+    slug: str = Form(default=""),
+    title: str = Form(default=""),
+    language: str = Form(default=""),
+    replace: bool = Form(default=False),
+) -> dict:
+    """导入一个课程包。包里只有课程原文，课本在本机重新生成。"""
+    import asyncio
+    import shutil
+    import tempfile
+    from pathlib import Path as _Path
+
+    from deeptutor_ext.course import SourceError, import_package
+
+    suffix = _Path(file.filename or "course.dtcourse").suffix or ".dtcourse"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as staging:
+        shutil.copyfileobj(file.file, staging)
+        staged = _Path(staging.name)
+
+    try:
+        record = await asyncio.to_thread(
+            import_package,
+            staged,
+            slug=slug,
+            title=title,
+            language=language,
+            replace=replace,
+        )
+    except SourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("导入课程包失败")
+        raise HTTPException(status_code=500, detail=f"导入失败：{exc}") from exc
+    finally:
+        staged.unlink(missing_ok=True)
+
+    return {"course": record.to_dict()}
 
 
 @course_router.post("/{slug}/delete")
