@@ -142,7 +142,9 @@ export default function BlockRenderer({
       body = <AnimationBlock block={block} />;
       break;
     case "code":
-      body = <CodeBlock block={block} />;
+      body = (
+        <CodeBlock block={block} bookId={bookId} pageId={currentPageId} />
+      );
       break;
     case "timeline":
       body = <TimelineBlock block={block} />;
