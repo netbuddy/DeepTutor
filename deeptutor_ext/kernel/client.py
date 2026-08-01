@@ -126,10 +126,15 @@ def _message(msg_type: str, content: dict[str, Any], channel: str = "shell") -> 
 
 
 async def _handshake(socket) -> None:
-    """确认这条连接真的接到内核上了，再让调用方开始执行代码。"""
+    """确认这条连接真的接到内核上了，再让调用方开始执行代码。
+
+    超时给得比较宽：容器刚起来时第一个内核要冷启动，加载 IPython 那一套要十几秒，
+    赶上机器忙还会更久。这里卡得太紧的表现是「点第一次运行报连不上，再点一次就好了」，
+    对使用者来说非常费解。
+    """
     msg_id, message = _message("kernel_info_request", {})
     await socket.send(message)
-    deadline = 20
+    deadline = 90
     while True:
         raw = await asyncio.wait_for(socket.recv(), timeout=deadline)
         frame = json.loads(raw)
@@ -160,7 +165,7 @@ async def _get_connection(kernel_id: str):
     try:
         socket = await websockets.connect(
             f"{_ws_url(kernel_id)}?token={token}",
-            open_timeout=20,
+            open_timeout=90,   # 同上：冷启动慢，宁可等也别报连不上
             close_timeout=5,
             ping_interval=20,
             # 图片是随消息回来的，默认上限对一张普通图表都不够。

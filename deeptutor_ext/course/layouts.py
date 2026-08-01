@@ -307,17 +307,39 @@ _MDX_KEEP_INNER = re.compile(
 )
 _MDX_OTHER_PAIR = re.compile(r"<([A-Z][\w.]*)\b[^>]*>(.*?)</\1>", re.S)
 _CODE_FENCE = re.compile(r"^```([\w+-]*)\n(.*?)^```", re.M | re.S)
-_RUNNABLE_LANGS = {"py", "python", "python3"}
+# 哪些语言的代码围栏可以点运行。Go 走的是「把这一页到这里为止的代码凑齐一起编译」，
+# 与 Python 的长驻内核不同，但对读者来说都是一个「运行」按钮。
+_RUNNABLE_LANGS = {"py", "python", "python3", "go", "golang"}
 
 
 def clean_mdx(text: str) -> str:
-    """把 MDX 里的组件标记去掉，只留下 Markdown 能表达的部分。"""
+    """把 MDX 里的组件标记去掉，只留下 Markdown 能表达的部分。
+
+    **代码围栏里的内容一个字都不能动。** 这些清洗规则是冲着 MDX 的 JSX 语法去的，
+    而它们在代码里全都有合法含义：``import`` 是 Python 和 Go 的导入语句，
+    尖括号是泛型和比较运算符，``[[...]]`` 是嵌套下标。误清洗的后果很隐蔽——
+    代码看着还在，跑起来才发现导入语句没了。所以先把围栏整段挖出来，
+    清洗完再原样放回去。
+    """
+    fences: list[str] = []
+
+    def stash(match: re.Match) -> str:
+        fences.append(match.group(0))
+        return f"\x00FENCE{len(fences) - 1}\x00"
+
+    text = _CODE_FENCE.sub(stash, text)
+
     text = _MDX_IMPORT.sub("", text)
     text = _MDX_KEEP_INNER.sub(lambda m: m.group(2), text)
     text = _MDX_OTHER_PAIR.sub(lambda m: m.group(2), text)
     text = _MDX_SELF_CLOSING.sub("", text)
     text = re.sub(r"\[\[.*?\]\]", "", text)  # 标题后缀的锚点
-    return re.sub(r"\n{3,}", "\n\n", text).strip()
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+    def restore(match: re.Match) -> str:
+        return fences[int(match.group(1))]
+
+    return re.sub(r"\x00FENCE(\d+)\x00", restore, text)
 
 
 def _split_prose_and_code(text: str, label: str, cwd: str) -> list[Fragment]:
@@ -334,6 +356,11 @@ def _split_prose_and_code(text: str, label: str, cwd: str) -> list[Fragment]:
         if code.strip():
             index += 1
             runnable = language in _RUNNABLE_LANGS
+            if language in ("go", "golang") and not re.search(r"^\s*package\s+\w", code, re.M):
+                # Go 的可编译单元必须有 package 声明。讲义里引用别处定义做对比的片段
+                # 没有它，当作可运行会直接编译失败——那不是学生的错，是这段本来就
+                # 只用于展示。这类片段保留高亮，但不给运行按钮。
+                runnable = False
             fragments.append(
                 Fragment(
                     kind="code" if runnable else "text",
