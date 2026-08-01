@@ -1,0 +1,722 @@
+<title>DeepTutor 使用手册 · 导入课程、边跑边学</title>
+
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #FDFCFA; --surface: #F4F2ED; --surface-2: #EAE7E0;
+    --ink: #1A1C20; --ink-soft: #3F444B; --muted: #6C727B;
+    --hair: #DDD9D1; --hair-soft: #EAE7E0;
+    --accent: #1D6A5A; --accent-soft: #E1F0EB;
+    --warn: #8C5A0E; --warn-soft: #F8EFDD;
+    --stop: #A03A20; --stop-soft: #F8E7E1;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+            "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --paper: #15171B; --surface: #1D2127; --surface-2: #262B33;
+      --ink: #EBE9E4; --ink-soft: #C5C9CF; --muted: #8D949D;
+      --hair: #2F343C; --hair-soft: #272C33;
+      --accent: #6DBFA8; --accent-soft: #182A25;
+      --warn: #D3A455; --warn-soft: #241D12;
+      --stop: #E08B6C; --stop-soft: #2A1B15;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #15171B; --surface: #1D2127; --surface-2: #262B33;
+    --ink: #EBE9E4; --ink-soft: #C5C9CF; --muted: #8D949D;
+    --hair: #2F343C; --hair-soft: #272C33;
+    --accent: #6DBFA8; --accent-soft: #182A25;
+    --warn: #D3A455; --warn-soft: #241D12;
+    --stop: #E08B6C; --stop-soft: #2A1B15;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --paper: #FDFCFA; --surface: #F4F2ED; --surface-2: #EAE7E0;
+    --ink: #1A1C20; --ink-soft: #3F444B; --muted: #6C727B;
+    --hair: #DDD9D1; --hair-soft: #EAE7E0;
+    --accent: #1D6A5A; --accent-soft: #E1F0EB;
+    --warn: #8C5A0E; --warn-soft: #F8EFDD;
+    --stop: #A03A20; --stop-soft: #F8E7E1;
+  }
+
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 16.5px; line-height: 1.8;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 52rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+
+  header.top { padding: 3.5rem 0 2rem; border-bottom: 2px solid var(--ink); }
+  .kicker {
+    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 1rem;
+  }
+  h1 {
+    font-size: clamp(1.7rem, 4.5vw, 2.4rem); font-weight: 660; line-height: 1.24;
+    letter-spacing: -0.018em; margin-bottom: 0.9rem; text-wrap: balance;
+  }
+  .standfirst { color: var(--ink-soft); max-width: 40rem; font-size: 1.03rem; }
+  .addr {
+    margin-top: 1.5rem; padding: 0.9rem 1.1rem; background: var(--accent-soft);
+    border-left: 3px solid var(--accent); font-family: var(--mono); font-size: 0.88rem;
+  }
+  .addr b { font-weight: 600; }
+
+  nav.toc {
+    margin: 2rem 0 0; padding: 1.1rem 0 0; border-top: 1px solid var(--hair);
+    display: flex; flex-wrap: wrap; gap: 0.4rem 1.5rem;
+    font-family: var(--mono); font-size: 0.8rem;
+  }
+  nav.toc a { color: var(--muted); text-decoration: none; border-bottom: 1px solid transparent; }
+  nav.toc a:hover, nav.toc a:focus-visible { color: var(--accent); border-bottom-color: var(--accent); }
+
+  section { padding-top: 3.5rem; }
+  h2 {
+    font-size: 1.35rem; font-weight: 660; letter-spacing: -0.012em; line-height: 1.35;
+    margin-bottom: 1.1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--hair);
+    text-wrap: balance;
+  }
+  h2 .num {
+    font-family: var(--mono); font-size: 0.85em; color: var(--accent);
+    margin-right: 0.55rem; font-weight: 500;
+  }
+  h3 { font-size: 1.05rem; font-weight: 640; margin: 2.2rem 0 0.7rem; text-wrap: balance; }
+  h4 { font-size: 0.97rem; font-weight: 640; color: var(--ink-soft); margin: 1.5rem 0 0.5rem; }
+  p { margin-bottom: 1rem; }
+  p:last-child { margin-bottom: 0; }
+  strong { font-weight: 660; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  code {
+    font-family: var(--mono); font-size: 0.86em; background: var(--surface-2);
+    border-radius: 3px; padding: 0.08em 0.36em; word-break: break-word;
+  }
+  pre {
+    font-family: var(--mono); font-size: 0.8rem; line-height: 1.7;
+    background: var(--surface); border-left: 3px solid var(--accent);
+    padding: 0.85rem 1.05rem; overflow-x: auto; margin: 1.2rem 0; color: var(--ink-soft);
+  }
+  ul, ol { margin: 0 0 1.05rem; padding-left: 1.35rem; }
+  li { margin-bottom: 0.45rem; }
+  li::marker { color: var(--muted); }
+
+  figure { margin: 1.6rem 0; }
+  figure img {
+    display: block; width: 100%; max-width: 100%; height: auto;
+    border: 1px solid var(--hair); border-radius: 5px; background: var(--surface);
+  }
+  figcaption { margin-top: 0.55rem; font-size: 0.85rem; color: var(--muted); line-height: 1.6; }
+
+  ol.steps { counter-reset: s; list-style: none; padding-left: 0; margin: 1.3rem 0; }
+  ol.steps > li {
+    counter-increment: s; position: relative; padding-left: 2.4rem; margin-bottom: 1.1rem;
+  }
+  ol.steps > li::before {
+    content: counter(s); position: absolute; left: 0; top: 0.15rem;
+    width: 1.7rem; height: 1.7rem; border-radius: 50%;
+    background: var(--accent); color: var(--paper);
+    font-family: var(--mono); font-size: 0.78rem; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+  ol.steps > li > b { display: block; margin-bottom: 0.15rem; }
+
+  .table-scroll { overflow-x: auto; margin: 1.3rem 0; }
+  table { border-collapse: collapse; width: 100%; min-width: 26rem; font-size: 0.9rem; }
+  th, td {
+    text-align: left; vertical-align: top;
+    padding: 0.6rem 0.9rem 0.6rem 0; border-bottom: 1px solid var(--hair-soft);
+  }
+  th {
+    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--muted); font-weight: 500;
+    border-bottom: 1px solid var(--hair); white-space: nowrap;
+  }
+  td:last-child, th:last-child { padding-right: 0; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.btn { font-weight: 620; white-space: nowrap; }
+
+  .box {
+    margin: 1.5rem 0; padding: 0.95rem 1.2rem; border-radius: 5px;
+    border: 1px solid var(--hair); background: var(--surface); font-size: 0.95rem;
+  }
+  .box .h {
+    font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.1em;
+    text-transform: uppercase; margin-bottom: 0.4rem; color: var(--accent);
+  }
+  .box.warn { border-color: var(--warn); background: var(--warn-soft); }
+  .box.warn .h { color: var(--warn); }
+  .box.stop { border-color: var(--stop); background: var(--stop-soft); }
+  .box.stop .h { color: var(--stop); }
+  .box p:last-child { margin-bottom: 0; }
+
+  dl.glossary { margin: 1.3rem 0; }
+  dl.glossary dt { font-weight: 640; margin-top: 1rem; font-size: 0.97rem; }
+  dl.glossary dt:first-child { margin-top: 0; }
+  dl.glossary dd { margin: 0.2rem 0 0; color: var(--ink-soft); font-size: 0.94rem; }
+
+  footer {
+    margin-top: 4rem; padding-top: 1.4rem; border-top: 1px solid var(--hair);
+    font-family: var(--mono); font-size: 0.76rem; color: var(--muted); line-height: 1.9;
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <div class="kicker">使用手册 · 2026-08-01</div>
+  <h1>用 DeepTutor 学一门课：<br>导进来，边跑边问</h1>
+  <p class="standfirst">
+    这份手册假设你从来没用过这个软件。跟着往下做，大约二十分钟你就能把一门网上的公开课
+    导进来，一边读讲义一边把里面的代码真的跑起来，跑不通的地方直接问助教。
+  </p>
+  <div class="addr">
+    打开地址 <b>http://192.168.213.24:9187/</b><br>
+    不需要注册，也不需要登录，浏览器里直接用。
+  </div>
+
+  <nav class="toc">
+    <a href="#s1">1 这是什么</a>
+    <a href="#s2">2 认路</a>
+    <a href="#s3">3 先随便问一句</a>
+    <a href="#s4">4 导入一门课</a>
+    <a href="#s5">5 在课本里学</a>
+    <a href="#s6">6 把代码跑起来</a>
+    <a href="#s7">7 跑错了怎么办</a>
+    <a href="#s8">8 问助教</a>
+    <a href="#s9">9 管理课程</a>
+    <a href="#s10">10 设置</a>
+    <a href="#s11">11 常见问题</a>
+    <a href="#s12">12 名词表</a>
+  </nav>
+</header>
+
+<section id="s1">
+  <h2><span class="num">1</span>这是什么</h2>
+
+  <p>DeepTutor 是一个「会陪你学」的软件。你可以把它当成三样东西合在一起：</p>
+
+  <ul>
+    <li>一个<strong>能问的助教</strong>——随时提问，它用中文回答；</li>
+    <li>一个<strong>能读的课本</strong>——网上的公开课导进来，按章节排好给你看；</li>
+    <li>一个<strong>能跑代码的练习本</strong>——课本里的每段代码旁边都有「运行」按钮，点一下就出结果，图表也直接画在页面上。</li>
+  </ul>
+
+  <p>
+    最后一条是关键。学编程类的课，光看代码没用，得自己跑一遍、改一改再跑，才知道每行在干什么。
+    以前这需要你在自己电脑上装一堆环境；现在<strong>什么都不用装</strong>，代码跑在服务器上，
+    你只要点按钮。
+  </p>
+
+  <div class="box">
+    <div class="h">这份手册会用到的两门课</div>
+    <p>
+      系统里已经导好了两门：<strong>Hugging Face LLM 课程</strong>（讲大语言模型，12 章 78 页）
+      和<strong>微软机器学习入门课</strong>（9 章 27 页）。手册里的截图都出自这两门课，
+      你打开就能看到同样的界面。
+    </p>
+  </div>
+</section>
+
+<section id="s2">
+  <h2><span class="num">2</span>认路：左边那一列</h2>
+
+  <p>打开网址后，第一眼是这样：</p>
+
+  {{IMG:01-首页|软件首页。左边一列是导航，中间是提问框，右边是这次对话的活动记录。}}
+
+  <p>左边那一列从上到下的意思：</p>
+
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>入口</th><th>做什么用</th><th>什么时候点</th></tr></thead>
+      <tbody>
+        <tr><td class="btn">主页</td><td>直接跟助教对话</td><td>有问题想随口问一句</td></tr>
+        <tr><td class="btn">课程</td><td>把网上的课导进来、管理已有的课</td><td><strong>开始学一门新课时先来这里</strong></td></tr>
+        <tr><td class="btn">书籍</td><td>打开导好的课本，读讲义、跑代码</td><td>日常学习都在这里</td></tr>
+        <tr><td class="btn">知识中心</td><td>看有哪些资料被做成了可检索的资料库</td><td>想确认助教能查到哪些内容</td></tr>
+        <tr><td class="btn">设置</td><td>改模型、界面语言、主题</td><td>一般不用动</td></tr>
+        <tr><td class="btn">伙伴 / 我的智能体 / 智能写作 / 学习空间 / 记忆</td><td>软件自带的其他功能</td><td>本手册不涉及，可以先不管</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>「最近」那一栏是你之前的对话记录，点一下就能接着聊。</p>
+</section>
+
+<section id="s3">
+  <h2><span class="num">3</span>先随便问一句，感受一下</h2>
+
+  <p>还没导课程之前，可以先在<strong>主页</strong>直接提问，就像用别的聊天工具一样。</p>
+
+  {{IMG:17-首页提问|在中间的框里输入问题，按回车发送。下方那一排可以选它用哪个资料库、哪个模型。}}
+
+  <ol class="steps">
+    <li><b>在中间的框里打字</b>比如输入「什么是过拟合？用一个生活里的比喻说明。」</li>
+    <li><b>按回车发送</b>回答会一个字一个字地出现，通常几秒到几十秒。</li>
+    <li><b>接着追问</b>它记得上文，可以直接说「再举个例子」。</li>
+  </ol>
+
+  <p>
+    输入框下面那排小控件里，<strong>「知识库」</strong>决定它回答时去查哪些资料。
+    默认不选就是凭它自己知道的回答；选上某个资料库，它会先去查再答，答案会更贴课程内容。
+    第 8 节会讲这个。
+  </p>
+</section>
+
+<section id="s4">
+  <h2><span class="num">4</span>导入一门课</h2>
+
+  <p>
+    这是这套软件最有用的功能：把网上的公开课整个搬进来。搬进来之后，讲义变成能读的课本，
+    课里的代码变成能点着跑的练习。
+  </p>
+
+  <p>点左边的<strong>「课程」</strong>：</p>
+
+  {{IMG:02-课程页|课程页。上半部分是新增课程的表单，下半部分是已经导进来的课。}}
+
+  <h3>要填什么</h3>
+
+  {{IMG:03-新增课程表单|填好的样子。只有第一行是必填的。}}
+
+  <ol class="steps">
+    <li>
+      <b>课程来源</b>
+      填一个 GitHub 仓库地址，也就是那门课源文件存放的位置，比如
+      <code>https://github.com/huggingface/course.git</code>。
+      怎么找：在浏览器里打开那门课的 GitHub 页面，把地址栏里的网址后面加上
+      <code>.git</code> 就是了。
+    </li>
+    <li>
+      <b>课程名称</b>
+      留空的话会用课程自己写的标题。想显示成中文名就自己填一个。
+    </li>
+    <li>
+      <b>优先用哪种语言的正文</b>
+      很多公开课有多语言版本。选「中文」，有中文版就用中文版，没有就自动退回英文版。
+    </li>
+    <li>
+      <b>顺带建检索索引</b>
+      勾上的话，导入时会把整门课的正文做成一份可检索的资料库，助教答题时能翻遍整门课、
+      告诉你「这个在第几章讲过」。<strong>建议勾上</strong>，代价是导入会慢几分钟。
+      不勾也能随时补建。
+    </li>
+    <li>
+      <b>已存在同名课程时覆盖</b>
+      同一门课重新导一次（比如课程更新了）才需要勾。
+    </li>
+    <li>
+      <b>点「取课程」</b>
+      小的课几秒就好，大的课（带很多图片的）可能要几分钟。页面上会有提示。
+    </li>
+  </ol>
+
+  <div class="box warn">
+    <div class="h">导入要花多久</div>
+    <p>
+      主要看那门课的仓库有多大。Hugging Face 那门课 25 MB，五秒就导完了；
+      微软那门机器学习课带了大量图片和几十种语言的翻译，1.8 GB，要等几分钟。
+      勾了「建检索索引」的话，再加几分钟。
+    </p>
+  </div>
+
+  <h3>导完之后</h3>
+
+  {{IMG:04-课程卡片|每门课一张卡片，写着它有多少章多少页、多少段代码能跑、索引建没建。}}
+
+  <p>卡片上的几个数字是什么意思：</p>
+
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>写着</th><th>意思</th></tr></thead>
+      <tbody>
+        <tr><td class="btn">章节 12 章 78 页</td><td>这门课被拆成了 12 章、78 个页面。一页大致对应原课程的一节。</td></tr>
+        <tr><td class="btn">可运行代码段 128</td><td>有 128 段代码是可以点「运行」的。</td></tr>
+        <tr><td class="btn">占用 24.6 MB</td><td>课程文件在服务器上占的空间。</td></tr>
+        <tr><td class="btn">检索索引 course-…</td><td>已经建好了，后面跟着建好的时间。写「未建」就是还没建。</td></tr>
+        <tr><td class="btn">目录树配正文 / 讲义配 notebook</td><td>这门课原本是怎么组织的。不用管，系统自己认。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>
+    如果导入时跳过了一些文件（有些课程里混着损坏的文件），卡片上会写明跳过了几个，
+    不影响其余内容。
+  </p>
+</section>
+
+<section id="s5">
+  <h2><span class="num">5</span>在课本里学</h2>
+
+  <p>课程卡片上点<strong>「打开课本」</strong>，或者从左边的<strong>「书籍」</strong>进去：</p>
+
+  {{IMG:05-书架|书架。每门导进来的课都是这里的一本书。}}
+
+  <p>点进一本书，界面分三块：</p>
+
+  {{IMG:06-课本讲义|左边是章节目录，中间是正文，右边是这一页的小节导航。}}
+
+  <ul>
+    <li><strong>左边</strong>是这门课的章节。点一章展开，点一节跳过去。</li>
+    <li><strong>中间</strong>是正文。讲义按小节切开了，一段一段读。</li>
+    <li><strong>右边</strong>是这一页里都有哪些小块，点一下直接跳到那里。页数多的时候很有用。</li>
+  </ul>
+
+  <p>正文里的图片、公式、表格都会正常显示。你可以像读网页一样往下滚。</p>
+</section>
+
+<section id="s6">
+  <h2><span class="num">6</span>把代码跑起来</h2>
+
+  <p>往下滚，遇到代码的地方长这样——注意右上角那一排按钮，这是普通网页课程没有的：</p>
+
+  {{IMG:07-可运行单元格|一段可运行的代码。左上角「第 1 格」是它的编号，右上角四个按钮。}}
+
+  <h3>四个按钮</h3>
+
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>按钮</th><th>做什么</th><th>什么时候用</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="btn">运行</td>
+          <td>只跑这一段。</td>
+          <td>从上往下顺着学的时候用这个。</td>
+        </tr>
+        <tr>
+          <td class="btn">从头跑到这</td>
+          <td>先把这一页前面的代码依次跑一遍，再跑这一段。</td>
+          <td><strong>跳着看的时候用这个。</strong>后面的代码常常要用前面算出来的东西，直接跑会报错。</td>
+        </tr>
+        <tr>
+          <td class="btn">重置</td>
+          <td>把这一页已经算出来的东西全部清空，从干净的状态重新开始。</td>
+          <td>改了很多东西想推倒重来的时候。</td>
+        </tr>
+        <tr>
+          <td class="btn">问助教</td>
+          <td>把这段代码和它的运行结果一起发给助教提问。</td>
+          <td>看不懂、跑不通的时候。第 8 节细讲。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>点一下「运行」</h3>
+
+  {{IMG:08-运行结果|运行完了。「输出」下面是这段代码算出来的结果，前面那行小字写着用了多久。}}
+
+  <p>
+    第一次运行某些代码会比较慢（几十秒），因为服务器要去下载它需要的模型文件；
+    同样的代码第二次跑就快了。
+  </p>
+
+  <h3>输出有三种样子</h3>
+
+  <p><strong>一是文字</strong>，就像上面那张图。</p>
+
+  <p><strong>二是表格</strong>，处理数据的课里很常见：</p>
+
+  {{IMG:10-表格输出|表格会排整齐显示。这一格前面还有小字提示「先跑了前面 1 格」，说明用的是「从头跑到这」。}}
+
+  <p><strong>三是图表</strong>，直接画在页面上：</p>
+
+  {{IMG:09-图表输出|散点图。这张图是刚刚在服务器上画出来的，不是课程里的截图。}}
+
+  <div class="box">
+    <div class="h">一个重要的概念：这一页是「连着的」</div>
+    <p>
+      同一页里的代码<strong>共享同一份计算状态</strong>。第 1 格读进来的数据，第 5 格能直接用；
+      第 5 格算出来的结果，第 10 格还认得。这就是为什么跳着跑会报错——
+      后面的代码要用前面的东西，而前面那些你还没跑。
+    </p>
+    <p>换一页（换一节课）就是全新的开始，两页之间互不影响。</p>
+  </div>
+
+  <h3>改代码再跑</h3>
+
+  <p>
+    代码框是可以直接改的。把光标点进去，像编辑文本一样改，改完点「运行」跑的就是你改后的版本。
+    改过之后编号旁边会出现一个<strong>「已修改」</strong>的标记，还会多一个<strong>「还原」</strong>按钮，
+    点它就回到课程原本的写法。
+  </p>
+
+  <p>
+    <strong>这是学编程最有效的方式</strong>：把某个数字改大改小、把某一行删掉，看看结果怎么变。
+    改坏了也不要紧，还原一下就行，不会影响课程本身。
+  </p>
+</section>
+
+<section id="s7">
+  <h2><span class="num">7</span>跑错了怎么办</h2>
+
+  <p>报错很正常，尤其是跳着跑的时候。报错长这样：</p>
+
+  {{IMG:11-报错提示|红色区域是报错信息，最下面一行是给你的建议。}}
+
+  <p>红色区域从上到下：</p>
+
+  <ol class="steps">
+    <li><b>第一行是错误类型和一句话说明</b>比如 <code>NameError: name 'new_pumpkins' is not defined</code>，意思是「你用了一个还不存在的东西」。</li>
+    <li><b>中间是详细的追踪信息</b>看不懂可以跳过，它主要给有经验的人看。</li>
+    <li><b>最后一行是给你的建议</b>系统会判断这是哪一类错误，告诉你下一步做什么。</li>
+  </ol>
+
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>最常见的错误</th><th>意思</th><th>怎么办</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="btn">NameError</td>
+          <td>用到了还没定义的东西。</td>
+          <td><strong>点「从头跑到这」</strong>，把前面的代码补跑一遍就好了。</td>
+        </tr>
+        <tr>
+          <td class="btn">ModuleNotFoundError</td>
+          <td>这段代码要用的工具包服务器上没装。</td>
+          <td>点「问助教」，或者跳过这一段——不是你的问题。</td>
+        </tr>
+        <tr>
+          <td class="btn">FileNotFoundError</td>
+          <td>找不到要读的数据文件。</td>
+          <td>多半也是前面的代码没跑。先「从头跑到这」。</td>
+        </tr>
+        <tr>
+          <td class="btn">其他看不懂的</td>
+          <td>——</td>
+          <td>点「问助教」，代码和报错会一起发过去，它会解释。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="box warn">
+    <div class="h">如果按钮点了没反应</div>
+    <p>
+      多半是执行环境没启动。这不是你能解决的，找管理员说一句「执行容器没起来」即可，
+      那边一条命令就能恢复。
+    </p>
+  </div>
+</section>
+
+<section id="s8">
+  <h2><span class="num">8</span>问助教</h2>
+
+  <p>
+    这是最实用的功能。任何一段代码旁边点<strong>「问助教」</strong>，右边会滑出对话面板，
+    而且<strong>问题已经替你写好了</strong>：
+  </p>
+
+  {{IMG:12-问助教预填|输入框里已经填好了这段代码、它的运行结果或报错，还有一句现成的问题。}}
+
+  <p>
+    预填的内容里包含三样东西：这是第几段代码、代码的完整内容、以及它刚才的运行结果或报错。
+    所以助教<strong>知道你在看什么</strong>，不用你再解释一遍。
+  </p>
+
+  <ol class="steps">
+    <li><b>可以直接按回车发送</b>用现成的问题就行。</li>
+    <li><b>也可以先补一句自己的疑问</b>比如在后面加上「这个参数改成 5 会怎样？」，一起发过去。</li>
+    <li><b>回答出来后可以接着追问</b>它记得上文。</li>
+  </ol>
+
+  {{IMG:13-助教回答|助教的回答。它同时回答了代码的问题和「哪一章讲微调」这种需要翻遍全课才知道的问题。}}
+
+  <h3>助教能答到什么程度</h3>
+
+  <p>
+    如果这门课<strong>建过检索索引</strong>（第 4 节那个勾选项），助教回答时会去翻整门课的正文。
+    所以你可以问这类问题：
+  </p>
+
+  <ul>
+    <li>「这门课哪一章讲微调？」</li>
+    <li>「前面是不是提到过 tokenizer？在哪一节？」</li>
+    <li>「这个概念和第 2 章讲的那个有什么区别？」</li>
+  </ul>
+
+  <p>
+    它会给出具体的章节，而不是含糊地说「课程后面会讲」。没建索引的课就答不了这类问题——
+    可以随时回课程页补建。
+  </p>
+
+  <p>除了在代码旁边问，你也可以直接点书页右下角的对话按钮，就这一页的内容自由提问。</p>
+</section>
+
+<section id="s9">
+  <h2><span class="num">9</span>管理已有的课程</h2>
+
+  <p>回到<strong>「课程」</strong>页，每张卡片右边有三个按钮：</p>
+
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>按钮</th><th>做什么</th><th>注意</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="btn">打开课本</td>
+          <td>跳到这门课的书页开始学。</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td class="btn">建检索索引 / 重建索引</td>
+          <td>把整门课的正文做成可检索的资料库，让助教能翻遍全课回答。</td>
+          <td>要几分钟。课程内容更新过就重建一次。</td>
+        </tr>
+        <tr>
+          <td class="btn">删除</td>
+          <td>把这门课整套删掉：课程文件、课本、检索索引。</td>
+          <td><strong>删了就没了，没有回收站。</strong>会先弹窗让你确认。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>
+    想更新一门课（比如原课程作者更新了内容），做法是<strong>重新导入并勾上「覆盖」</strong>，
+    不用先删。重新导入之后记得再点一次「重建索引」。
+  </p>
+
+  <h3>看看资料库</h3>
+
+  <p>左边的<strong>「知识中心」</strong>能看到所有可检索的资料库，课程的索引也在这里：</p>
+
+  {{IMG:14-知识中心|知识中心。以 course- 开头的就是课程自动建的索引。}}
+
+  <p>
+    平时不用管这一页。它的用处是：当你在主页对话时想让助教查某门课，
+    可以在输入框下面的「知识库」里选中对应的那一个。
+  </p>
+</section>
+
+<section id="s10">
+  <h2><span class="num">10</span>设置：一般不用动</h2>
+
+  <p>左边最下面的<strong>「设置」</strong>里有几项你可能会关心的。</p>
+
+  <h3>模型</h3>
+
+  {{IMG:15-设置模型|模型设置。这里配的是助教用哪个人工智能模型来回答。}}
+
+  <p>
+    这一页配的是助教背后用哪个模型。<strong>默认已经配好了</strong>，用的是机房里自己跑的模型，
+    你的提问不会发到外部网站。除非管理员让你改，否则不用动。
+  </p>
+
+  <h3>外观</h3>
+
+  {{IMG:16-设置外观|外观设置。可以改主题和界面语言。}}
+
+  <div class="box warn">
+    <div class="h">界面语言会连带影响回答语言</div>
+    <p>
+      这里的语言不只是改按钮上的字——<strong>助教用什么语言回答，跟着界面语言走</strong>。
+      界面是中文，它就用中文答；切成英文，它就用英文答。
+    </p>
+    <p>
+      本系统已经把默认改成中文了，所以你打开就是中文界面、中文回答，不用做任何设置。
+      想用英文的话在这里切，只影响你自己的浏览器，不影响别人。
+    </p>
+  </div>
+</section>
+
+<section id="s11">
+  <h2><span class="num">11</span>常见问题</h2>
+
+  <h4>我改坏了课程里的代码，会影响别人吗？</h4>
+  <p>
+    不会。你在代码框里的修改只在你自己的浏览器里，课程原文是只读的，改不动。
+    点「还原」就能回到原样。
+  </p>
+
+  <h4>点了运行，一直转圈不出结果</h4>
+  <p>
+    先看是不是要下载模型的那类代码（第一次会慢，几十秒很正常）。超过两三分钟还没动静，
+    刷新页面重试；还不行就是执行环境出问题了，找管理员。
+  </p>
+
+  <h4>为什么有的代码段没有「运行」按钮</h4>
+  <p>
+    只有 Python 代码能跑。课程里的命令行片段、配置文件片段这些只作展示，没有按钮。
+  </p>
+
+  <h4>助教说的不对怎么办</h4>
+  <p>
+    它会出错，尤其是没建检索索引的课，它可能凭印象回答。
+    遇到拿不准的，追问一句「这是课程里写的还是你推测的？」，或者去课本里核对原文。
+  </p>
+
+  <h4>我的对话记录会保存吗？</h4>
+  <p>会。左边「最近」那一栏能看到之前的对话，点进去接着聊。</p>
+
+  <h4>能自己导一门课吗？</h4>
+  <p>
+    能，就是第 4 节讲的。只要那门课在 GitHub 上有公开仓库、内容是 Markdown 文档或者
+    Jupyter 笔记本（<code>.ipynb</code>）就行。导进来试试，不合适删掉即可。
+  </p>
+
+  <h4>课本里图片显示不出来</h4>
+  <p>有的课程把图片存在外部网站上，服务器访问不到就会裂开。这不影响正文和代码。</p>
+</section>
+
+<section id="s12">
+  <h2><span class="num">12</span>名词表</h2>
+
+  <p>手册里出现过的词，按第一次出现的顺序：</p>
+
+  <dl class="glossary">
+    <dt>课程 / 课本 / 书</dt>
+    <dd>
+      同一样东西的三种叫法。「课程」是从网上导进来的原始资料，
+      导进来之后在「书籍」里显示成一本可读的「课本」。
+    </dd>
+
+    <dt>检索索引（也叫知识库）</dt>
+    <dd>
+      把整门课的文字做成一份可以快速查找的资料库。有了它，助教回答时能翻遍全课，
+      告诉你某个内容在第几章讲过；没有它，助教只能凭自己知道的回答。
+    </dd>
+
+    <dt>代码格 / 单元格（cell）</dt>
+    <dd>
+      课本里一段可以单独运行的代码，界面上标着「第 N 格」。
+      这个说法来自 Jupyter 笔记本——那是数据分析和机器学习领域最常用的一种文档格式，
+      把讲解和可运行的代码交替排在一起。
+    </dd>
+
+    <dt>Jupyter 笔记本（.ipynb 文件）</dt>
+    <dd>
+      上面说的那种文档格式。很多公开课的练习就是用它写的。
+      导入课程时系统会自动认出来，把里面的每一格变成课本里可运行的代码段。
+    </dd>
+
+    <dt>计算状态</dt>
+    <dd>
+      代码跑过之后留在内存里的东西——读进来的数据、算出来的结果、定义的变量。
+      同一页的代码共享同一份，所以后面的代码能用前面的成果。「重置」就是把它清空。
+    </dd>
+
+    <dt>模型</dt>
+    <dd>
+      助教背后的人工智能。本系统用的是机房里自己跑的模型，你的提问不会发到外部网站。
+    </dd>
+
+    <dt>仓库地址</dt>
+    <dd>
+      GitHub 上一个项目的网址，形如 <code>https://github.com/用户名/项目名.git</code>。
+      导入课程时要填的就是它。
+    </dd>
+  </dl>
+</section>
+
+<footer>
+  DeepTutor 使用手册 · 2026-08-01 · 应用地址 http://192.168.213.24:9187/<br>
+  截图均取自本系统真实界面。遇到手册没写到的问题，可以直接在主页问助教。
+</footer>
+
+</div>
