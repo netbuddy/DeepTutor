@@ -33,12 +33,14 @@ PIDFILE    := $(LOG_DIR)/deeptutor.pid
 LOCAL_BRANCH := local
 BASE_TAG     := upstream-base
 
-.PHONY: help install start stop restart status health logs verify upgrade patches wait-port
+.PHONY: help install start stop restart status health logs verify upgrade patches wait-port \
+        kernel-start kernel-stop kernel-status kernel-logs
 
 help:
 	@echo "make install | start | stop | restart | status | health | verify"
 	@echo "make upgrade VERSION=v1.5.8    升级 DeepTutor 并重新集成扩展"
 	@echo "make patches                   导出本地源码改动"
+	@echo "make kernel-start | kernel-stop | kernel-status | kernel-logs   学生代码的执行容器"
 	@echo ""
 	@echo "应用地址： http://$(LAN_IP):$(FRONT_PORT)/"
 	@echo "后端接口： http://$(LAN_IP):$(BACK_PORT)/docs"
@@ -110,6 +112,20 @@ health:
 
 logs:
 	@tail -f $(LOG)
+
+# ── 学生代码的执行容器 ──────────────────────────────────────────────────
+
+kernel-start:
+	@$(EXT)/bin/kernel-container.sh start
+
+kernel-stop:
+	@$(EXT)/bin/kernel-container.sh stop
+
+kernel-status:
+	@$(EXT)/bin/kernel-container.sh status
+
+kernel-logs:
+	@$(EXT)/bin/kernel-container.sh logs
 
 # ── 接入自检 ────────────────────────────────────────────────────────────
 
