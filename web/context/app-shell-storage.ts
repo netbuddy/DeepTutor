@@ -62,15 +62,17 @@ export const CODE_BLOCK_SETTINGS_EVENT = "deeptutor:code-block-settings";
 export function normalizeLanguage(
   value: string | null | undefined,
 ): AppLanguage {
-  return value === "zh" ? "zh" : "en";
+  // 默认中文：只有显式选了英文才用英文。上游默认是反过来的，
+  // 那会让每个新浏览器都以英文界面打开，而回答语言跟着界面语言走。
+  return value === "en" ? "en" : "zh";
 }
 
 export function readStoredLanguage(): AppLanguage {
-  if (typeof window === "undefined") return "en";
+  if (typeof window === "undefined") return "zh";
   try {
     return normalizeLanguage(window.localStorage.getItem(LANGUAGE_STORAGE_KEY));
   } catch {
-    return "en";
+    return "zh";
   }
 }
 
