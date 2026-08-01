@@ -30,3 +30,14 @@
     title: 并发与取消
   - local: part3/12
     title: 出错的时候
+
+- title: 第四部分 · 记忆
+  sections:
+  - local: part4/13
+    title: 有状态的 agent
+  - local: part4/14
+    title: 会话持久化
+  - local: part4/15
+    title: 会话树
+  - local: part4/16
+    title: 上下文压缩
