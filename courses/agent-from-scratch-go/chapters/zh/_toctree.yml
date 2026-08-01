@@ -1,0 +1,32 @@
+- title: 第一部分 · 骨架与协议
+  sections:
+  - local: part1/1
+    title: 全景：agent 到底在做什么
+  - local: part1/2
+    title: 消息与内容块
+  - local: part1/3
+    title: 事件流
+  - local: part1/4
+    title: 消息存储
+  - local: part1/5
+    title: 脚本化模型
+
+- title: 第二部分 · 接上真模型
+  sections:
+  - local: part2/6
+    title: 供应商适配
+  - local: part2/7
+    title: 流式解析
+  - local: part2/8
+    title: 换上真模型
+
+- title: 第三部分 · agent 的心脏
+  sections:
+  - local: part3/9
+    title: 工具契约
+  - local: part3/10
+    title: 主循环
+  - local: part3/11
+    title: 并发与取消
+  - local: part3/12
+    title: 出错的时候
