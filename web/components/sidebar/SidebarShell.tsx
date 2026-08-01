@@ -14,6 +14,7 @@ import {
   Github,
   HeartHandshake,
   House,
+  GraduationCap,
   LayoutGrid,
   Library,
   Lock,
@@ -80,6 +81,14 @@ const PRIMARY_NAV: NavEntry[] = [
     icon: Library,
     tooltipKey: "Book tooltip",
     requires: "llm",
+  },
+  {
+    // 课程：把外部课程取进来，变成可读可练的课本。放在书之后、学习空间之前，
+    // 因为它产出的正是书。
+    href: "/course",
+    label: "Course",
+    icon: GraduationCap,
+    tooltipKey: "Course tooltip",
   },
   {
     href: "/space",
