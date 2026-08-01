@@ -109,6 +109,7 @@ class SessionManager:
     async def _drop_locked(self, session_key: str) -> None:
         session = self._sessions.pop(session_key, None)
         if session is not None:
+            # shutdown_kernel 内部会先关掉那条 WebSocket 再删内核，这里不必重复。
             await client.shutdown_kernel(session.kernel_id)
 
     async def _reap_locked(self) -> None:
@@ -154,17 +155,36 @@ class SessionManager:
         cwd: str = "",
         timeout_s: int | None = None,
     ) -> CellOutput:
-        session = await self.get(session_key, cwd=cwd)
-        result = await client.execute(
-            session.kernel_id,
-            code,
-            artifact_dir=session.workdir,
-            url_prefix=session.url_prefix,
-            timeout_s=timeout_s,
-        )
-        session.last_used = time.time()
-        session.executions += 1
-        return result
+        last_error: client.KernelUnavailable | None = None
+
+        # 试两次。第一次失败多半是内核冷启动没赶上握手，或者上一个内核刚被回收、
+        # 连接表里留了个坏的。这两种情况重来一次就好，让学生自己点「重置再试」
+        # 是把我们的实现细节推给了学生。
+        for attempt in (1, 2):
+            try:
+                # 取内核也要包在 try 里：失败最常发生在创建内核这一步
+                # （容器同时起停十几个内核时会变慢），只包住执行等于没有重试。
+                session = await self.get(session_key, cwd=cwd)
+                result = await client.execute(
+                    session.kernel_id,
+                    code,
+                    artifact_dir=session.workdir,
+                    url_prefix=session.url_prefix,
+                    timeout_s=timeout_s,
+                )
+            except client.KernelUnavailable as exc:
+                last_error = exc
+                logger.warning(
+                    "会话 %s 第 %d 次执行没能连上内核：%s", session_key, attempt, exc
+                )
+                await self.reset(session_key)
+                continue
+            session.last_used = time.time()
+            session.executions += 1
+            return result
+
+        assert last_error is not None
+        raise last_error
 
     def describe(self) -> list[dict[str, object]]:
         """给自检与状态接口看的快照。"""

@@ -53,10 +53,10 @@ def _ws_url(kernel_id: str) -> str:
     return f"{base}/api/kernels/{kernel_id}/channels"
 
 
-async def _request(method: str, path: str, **kwargs: Any) -> httpx.Response:
+async def _request(method: str, path: str, *, timeout: float = 30.0, **kwargs: Any) -> httpx.Response:
     url = f"{config.BASE_URL}{path}"
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.request(method, url, headers=_auth_headers(), **kwargs)
     except httpx.HTTPError as exc:
         raise KernelUnavailable(
@@ -80,7 +80,10 @@ async def ping() -> bool:
 
 
 async def start_kernel() -> str:
-    response = await _request("POST", "/api/kernels", json={"name": "python3"})
+    # 超时给到 90 秒，和 WebSocket 握手的预算一致。容器同时在起停十几个内核时，
+    # 创建一个新内核可能要几十秒；这里卡在 30 秒的表现是「第一次点运行报错，
+    # 再点一次就好了」，对使用者来说毫无道理。
+    response = await _request("POST", "/api/kernels", json={"name": "python3"}, timeout=90.0)
     return str(response.json()["id"])
 
 
