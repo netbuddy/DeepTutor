@@ -1,3 +1,6 @@
 logs/
 *.egg-info/
 __pycache__/
+.kernel-token
+.pids/
+data/
