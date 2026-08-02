@@ -315,6 +315,58 @@ _RUNNABLE_LANGS = {"py", "python", "python3", "go", "golang"}
 # 全部在浏览器里画，不出网也不需要图片文件。
 FIGURE_LANGS = {"mermaid", "svg", "chartjs"}
 
+# 自测题围栏。内容是 YAML，一题一项。
+QUIZ_LANGS = {"quiz"}
+
+# 提示框：引用段落以 > [!要点] 这类标记开头。四种样式对应书引擎的四种 callout。
+CALLOUT_KINDS = {
+    "要点": "key_idea",
+    "坑": "common_pitfall",
+    "小结": "summary",
+    "提示": "tip",
+    "key_idea": "key_idea",
+    "common_pitfall": "common_pitfall",
+    "summary": "summary",
+    "tip": "tip",
+}
+
+_CALLOUT_RE = re.compile(r"^>\s*\[!([^\]]+)\]\s*\n((?:>.*\n?)*)", re.M)
+
+
+def _split_callouts(text: str, label: str) -> list["Fragment"]:
+    """把一段正文按提示框标记切开：标记内的成 callout，标记外的仍是讲解。"""
+    out: list[Fragment] = []
+    cursor = 0
+    for match in _CALLOUT_RE.finditer(text):
+        before = text[cursor : match.start()].strip()
+        if before:
+            out += _fragments_from_markdown(before, label)
+        kind = CALLOUT_KINDS.get(match.group(1).strip())
+        body = "\n".join(
+            line.lstrip(">").strip() for line in match.group(2).splitlines()
+        ).strip()
+        if kind and body:
+            out.append(
+                Fragment(
+                    kind="callout",
+                    body=body,
+                    title=match.group(1).strip(),
+                    language=kind,
+                    runnable=False,
+                    cwd="",
+                    cell_index=0,
+                    source_label=label,
+                )
+            )
+        elif body:
+            # 不认识的标记按普通引用处理，不要把内容吞掉
+            out += _fragments_from_markdown(match.group(0), label)
+        cursor = match.end()
+    tail = text[cursor:].strip()
+    if tail:
+        out += _fragments_from_markdown(tail, label)
+    return out
+
 
 def clean_mdx(text: str) -> str:
     """把 MDX 里的组件标记去掉，只留下 Markdown 能表达的部分。
@@ -346,6 +398,15 @@ def clean_mdx(text: str) -> str:
     return re.sub(r"\x00FENCE(\d+)\x00", restore, text)
 
 
+def _fence_kind(language: str, runnable: bool) -> str:
+    """一个围栏该变成哪种片段。"""
+    if language in FIGURE_LANGS:
+        return "figure"
+    if language in QUIZ_LANGS:
+        return "quiz"
+    return "code" if runnable else "text"
+
+
 def _split_prose_and_code(text: str, label: str, cwd: str) -> list[Fragment]:
     """把一篇正文按代码围栏切开：围栏外是讲解，围栏内是代码。"""
     fragments: list[Fragment] = []
@@ -354,7 +415,7 @@ def _split_prose_and_code(text: str, label: str, cwd: str) -> list[Fragment]:
     for match in _CODE_FENCE.finditer(text):
         prose = text[cursor : match.start()].strip()
         if prose:
-            fragments += _fragments_from_markdown(prose, label)
+            fragments += _split_callouts(prose, label)
         language = (match.group(1) or "").lower()
         code = match.group(2).rstrip()
         if code.strip():
@@ -369,11 +430,9 @@ def _split_prose_and_code(text: str, label: str, cwd: str) -> list[Fragment]:
                 runnable = False
             fragments.append(
                 Fragment(
-                    kind="figure"
-                    if language in FIGURE_LANGS
-                    else ("code" if runnable else "text"),
+                    kind=_fence_kind(language, runnable),
                     body=code
-                    if runnable or language in FIGURE_LANGS
+                    if runnable or language in FIGURE_LANGS or language in QUIZ_LANGS
                     else f"```{language}\n{code}\n```",
                     title=f"第 {index} 段代码" if runnable else "",
                     language=language or "text",
@@ -386,7 +445,7 @@ def _split_prose_and_code(text: str, label: str, cwd: str) -> list[Fragment]:
         cursor = match.end()
     tail = text[cursor:].strip()
     if tail:
-        fragments += _fragments_from_markdown(tail, label)
+        fragments += _split_callouts(tail, label)
     return fragments
 
 
