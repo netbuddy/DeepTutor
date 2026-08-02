@@ -16,8 +16,10 @@ import {
   Database,
   Download,
   Loader2,
+  Package,
   Plus,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
 
@@ -73,6 +75,7 @@ export default function CoursePage() {
   const [buildIndex, setBuildIndex] = useState(true);
   const [replace, setReplace] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -166,6 +169,46 @@ export default function CoursePage() {
       setNotice("");
     } finally {
       setBusySlug("");
+    }
+  }
+
+  function exportCourse(course: CourseRecord) {
+    // 直接让浏览器去下载：包可能有几十 MB，走 fetch 再转 blob 会先整个塞进内存。
+    setNotice(`正在打包《${course.title}》，包较大时要等一会儿…`);
+    window.location.href = apiUrl(`/api/v1/ext/course/${course.slug}/export`);
+  }
+
+  async function importPackage(file: File) {
+    setImporting(true);
+    setFailure("");
+    setNotice(`正在导入课程包 ${file.name}…`);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("replace", String(replace));
+      const response = await fetch(apiUrl("/api/v1/ext/course/import-package"), {
+        method: "POST",
+        body: form,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setFailure(data?.detail || `导入失败（HTTP ${response.status}）`);
+        setNotice("");
+        return;
+      }
+      const stats = data.course?.stats || {};
+      setNotice(
+        `已导入《${data.course?.title}》：${stats.chapters || 0} 章、${stats.pages || 0} 页。` +
+          "检索索引需要你自己点一次「建检索索引」——包里不含索引。",
+      );
+      await load();
+    } catch (error) {
+      setFailure(
+        `导入失败：${error instanceof Error ? error.message : String(error)}`,
+      );
+      setNotice("");
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -263,7 +306,7 @@ export default function CoursePage() {
               <span>已存在同名课程时覆盖</span>
             </label>
           </div>
-          <div>
+          <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => void createCourse()}
@@ -277,7 +320,33 @@ export default function CoursePage() {
               )}
               取课程
             </button>
+
+            <span className="text-xs text-[var(--muted-foreground)]">或者</span>
+
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]">
+              {importing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4" />
+              )}
+              从课程包导入
+              <input
+                type="file"
+                accept=".dtcourse,.tar.gz,application/gzip"
+                className="hidden"
+                disabled={importing}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) void importPackage(file);
+                }}
+              />
+            </label>
           </div>
+          <p className="text-xs text-[var(--muted-foreground)]">
+            课程包是别人打包好的一门课（<code>.dtcourse</code> 文件）。
+            包里只有课程原文，课本会在这台机器上重新生成。
+          </p>
         </div>
       </section>
 
@@ -382,6 +451,15 @@ export default function CoursePage() {
                     <Database className="h-3.5 w-3.5" />
                   )}
                   {course.kb_name ? "重建索引" : "建检索索引"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportCourse(course)}
+                  title="打成一个包，可以拷给别人导入"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                >
+                  <Package className="h-3.5 w-3.5" />
+                  导出为包
                 </button>
                 <button
                   type="button"

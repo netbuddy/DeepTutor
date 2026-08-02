@@ -20,9 +20,12 @@ TOKEN_FILE = Path(
     os.environ.get("DEEPTUTOR_EXT_KERNEL_TOKEN_FILE", "~/DeepTutor-ext/.kernel-token")
 ).expanduser()
 
-# 同时存活的内核数上限。每个内核大约占 150 到 300 MB，加载数据集后可能到 1 GB 以上，
-# 容器内存上限是 4 GB，所以这个数字不宜再往上调。超出时回收最久没用过的那个。
-MAX_LIVE_KERNELS = int(os.environ.get("DEEPTUTOR_EXT_MAX_KERNELS", "6"))
+# 同时存活的内核数上限。每个内核大约占 150 到 300 MB，加载数据集后可能到 1 GB 以上。
+# 容器内存 6 GB，12 个是留了余量的上限。
+#
+# 这个数字不能太小：一门课有二十来页，学生翻页时每页一个内核，上限太低会导致
+# 频繁地回收再新建，而新建内核要十几秒——表现是「翻回上一页点运行要等半天」。
+MAX_LIVE_KERNELS = int(os.environ.get("DEEPTUTOR_EXT_MAX_KERNELS", "12"))
 
 # 内核闲置多久后自动回收（秒）。学生看讲解、写作业的间隙不该被打断，所以给得比较宽。
 IDLE_TIMEOUT_S = int(os.environ.get("DEEPTUTOR_EXT_KERNEL_IDLE_S", "1800"))

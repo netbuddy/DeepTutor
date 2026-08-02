@@ -14,9 +14,11 @@ import {
   Paperclip,
   Send,
   X,
+  Code2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import AssistantResponse from "@/components/common/AssistantResponse";
+import { AssistantActivity } from "@/components/chat/home/TracePanels";
 import { useAppShell } from "@/context/AppShellContext";
 import { getSession } from "@/lib/session-api";
 import {
@@ -63,9 +65,20 @@ export interface BookChatPanelProps {
   onClose: () => void;
   initialSessionId?: string | null;
   onSessionResolved?: (sessionId: string) => void;
-  /** 从某个可运行单元格带过来的问题，打开面板时预填进输入框。 */
-  prefill?: string;
+  /** 从某个可运行单元格带过来的引用。它不进输入框，只作为附带的上下文。 */
+  cellRef?: CellReference | null;
+  /** 学生按叉号移除引用，或者发送之后清掉。 */
+  onClearCellRef?: () => void;
 }
+
+/** 「问助教」带过来的一格代码及其运行结果。 */
+export type CellReference = {
+  /** 给人看的标题，例如「第 3 格代码」。 */
+  label: string;
+  code: string;
+  output?: string;
+  error?: string;
+};
 
 function attachmentTypeFor(file: File): PendingAttachment["type"] | null {
   const kind = classifyFile(file);
@@ -95,6 +108,39 @@ function messageAttachment(attachment: PendingAttachment): MessageAttachment {
   };
 }
 
+/** 用户消息体。带代码块的（「问助教」引用的那一格）默认折叠，只显示问题本身。
+ *
+ * 发给模型的内容里必须带上代码，服务端存的也是这一份，重新打开会话时会原样回显。
+ * 折叠是显示层的事，不改动存下来的内容——改内容会让「发出去的」和「存下来的」对不上。
+ */
+function UserMessageBody({ content }: { content: string }) {
+  const [open, setOpen] = useState(false);
+  const fenceAt = content.indexOf("\n```");
+  if (fenceAt < 0) {
+    return <div className="whitespace-pre-wrap break-words">{content}</div>;
+  }
+  const head = content.slice(0, fenceAt).trimEnd();
+  const body = content.slice(fenceAt).trim();
+  const lineCount = body.split("\n").length;
+  return (
+    <div>
+      <div className="whitespace-pre-wrap break-words">{head}</div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="mt-1 text-[11px] underline decoration-dotted opacity-80 hover:opacity-100"
+      >
+        {open ? "收起附带的代码" : `附带了 ${lineCount} 行代码，点开看看`}
+      </button>
+      {open && (
+        <pre className="mt-1 max-h-56 overflow-auto rounded-lg bg-black/15 p-2 text-[10px] leading-relaxed">
+          {body}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 export default function BookChatPanel({
   book,
   page,
@@ -102,18 +148,31 @@ export default function BookChatPanel({
   onClose,
   initialSessionId = null,
   onSessionResolved,
-  prefill,
+  cellRef = null,
+  onClearCellRef,
 }: BookChatPanelProps) {
   const { t } = useTranslation();
   const { language: appLanguage } = useAppShell();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [cellRefOpen, setCellRefOpen] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // 学生在某一格点了「问助教」：把带上下文的问题填进输入框，光标停在末尾，
-  // 让他可以先补一句自己的疑问再发出去。
+  // 新引用进来时收起代码预览，并把光标放进输入框——学生接下来要做的事是写问题，
+  // 不是读自己刚才看过的代码。
   useEffect(() => {
-    if (prefill) setInput(prefill);
-  }, [prefill]);
+    if (!cellRef) return;
+    setCellRefOpen(false);
+    inputRef.current?.focus();
+  }, [cellRef]);
+
+  // 输入框随内容增高，上限 8 行。上游写死 rows={1}，一旦内容多于一行就只能看到最后一行。
+  useEffect(() => {
+    const node = inputRef.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${Math.min(node.scrollHeight, 176)}px`;
+  }, [input]);
   const [busy, setBusy] = useState(false);
   const [width, setWidth] = useState(360);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
@@ -152,7 +211,19 @@ export default function BookChatPanel({
     };
   }, []);
 
+  const spotRef = useRef<string>("");
+
   useEffect(() => {
+    // 这一轮问答刚把会话建起来，父组件随后把 id 回填进 initialSessionId。
+    // 那不是「换了会话」，不能把正在流式输出的消息清掉再从服务端重拉——
+    // 一拉就把刚积累起来的思考步骤和半截答案冲掉了。
+    const spot = `${book?.id || ""}|${page?.id || ""}`;
+    const sameSpot = spot === spotRef.current;
+    const sameSession =
+      Boolean(initialSessionId) && initialSessionId === sessionIdRef.current;
+    spotRef.current = spot;
+    if (sameSpot && sameSession) return;
+
     let cancelled = false;
     retryTimersRef.current.forEach((timer) => clearTimeout(timer));
     retryTimersRef.current.clear();
@@ -381,19 +452,49 @@ export default function BookChatPanel({
 
   async function send() {
     const text = input.trim();
-    if ((!text && attachments.length === 0) || busy || !book || !page) return;
+    if ((!text && attachments.length === 0 && !cellRef) || busy || !book || !page)
+      return;
     const userContent =
       text ||
-      (attachments.some((item) => item.type === "image")
-        ? t(
-            "Please analyze the attached image(s) using this chapter as context.",
-          )
-        : t("Please use the attached file(s) and this chapter as context."));
+      (cellRef
+        ? "请解释这段代码做了什么。"
+        : attachments.some((item) => item.type === "image")
+          ? t(
+              "Please analyze the attached image(s) using this chapter as context.",
+            )
+          : t("Please use the attached file(s) and this chapter as context."));
+
+    // 发给模型的内容 = 学生的问题 + 引用的那一格；
+    // 聊天记录里显示的只是问题加一行「附：第 N 格代码」，免得代码把面板刷满。
+    const outgoing = cellRef
+      ? [
+          userContent,
+          "",
+          `我说的是${cellRef.label}：`,
+          "```",
+          cellRef.code.slice(0, 4000),
+          "```",
+          cellRef.error
+            ? `它报错了：${cellRef.error}`
+            : cellRef.output
+              ? `它的运行结果是：${cellRef.output.slice(0, 1200)}`
+              : "",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : userContent;
+    const shownContent = cellRef
+      ? `${userContent}\n（附：${cellRef.label}）`
+      : userContent;
+
     const sentAttachments = attachments.map(messageAttachment);
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: userContent, attachments: sentAttachments },
+      { role: "user", content: shownContent, attachments: sentAttachments },
+      // 占位气泡。这条链路首字要二十几秒，没有它学生会对着空白以为没发出去。
+      { role: "assistant", content: "", streaming: true },
     ]);
+    onClearCellRef?.();
     setInput("");
     setAttachments([]);
     setAttachmentError(null);
@@ -402,7 +503,7 @@ export default function BookChatPanel({
     const client = ensureClient();
     const payload: StartTurnMessage = {
       type: "start_turn",
-      content: userContent,
+      content: outgoing,
       session_id: sessionIdRef.current,
       capability: "chat",
       tools: book.knowledge_bases?.length ? ["rag"] : [],
@@ -496,15 +597,25 @@ export default function BookChatPanel({
                     </div>
                   ) : null}
                   {m.role === "assistant" ? (
-                    <AssistantResponse
-                      content={m.content}
-                      className="text-sm leading-relaxed"
-                      isStreaming={Boolean(m.streaming)}
-                    />
+                    <>
+                      {/* 思考过程与执行步骤。和主界面用的是同一个组件：
+                          干活时自动展开，答完自动收起，点一下可以钉住。 */}
+                      <AssistantActivity
+                        events={m.events || []}
+                        isStreaming={Boolean(m.streaming)}
+                        content={m.content}
+                        className="mb-2"
+                      />
+                      {m.content ? (
+                        <AssistantResponse
+                          content={m.content}
+                          className="text-sm leading-relaxed"
+                          isStreaming={Boolean(m.streaming)}
+                        />
+                      ) : null}
+                    </>
                   ) : (
-                    <div className="whitespace-pre-wrap break-words">
-                      {m.content}
-                    </div>
+                    <UserMessageBody content={m.content} />
                   )}
                 </div>
               </div>
@@ -555,6 +666,38 @@ export default function BookChatPanel({
         {attachmentError && (
           <div className="mb-2 text-[11px] text-red-500">{attachmentError}</div>
         )}
+        {cellRef && (
+          <div className="mb-2 rounded-xl border border-[var(--primary)]/30 bg-[var(--primary)]/5">
+            <div className="flex items-center gap-2 px-2 py-1.5">
+              <Code2 className="h-3.5 w-3.5 shrink-0 text-[var(--primary)]" />
+              <button
+                type="button"
+                onClick={() => setCellRefOpen((v) => !v)}
+                className="min-w-0 flex-1 truncate text-left text-[11px] text-[var(--foreground)]"
+                title={cellRefOpen ? "收起代码" : "展开看看引用了什么"}
+              >
+                {cellRef.label} · {cellRef.code.split("\n").length} 行
+                {cellRef.error ? " · 有报错" : ""}
+                <span className="ml-1 text-[var(--muted-foreground)]">
+                  {cellRefOpen ? "收起" : "展开"}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onClearCellRef?.()}
+                className="shrink-0 opacity-60 hover:opacity-100"
+                title="不带这段代码"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+            {cellRefOpen && (
+              <pre className="max-h-40 overflow-auto border-t border-[var(--primary)]/20 px-2 py-1.5 text-[10px] leading-relaxed text-[var(--muted-foreground)]">
+                {cellRef.code}
+              </pre>
+            )}
+          </div>
+        )}
         <div className="flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-[var(--background)] px-2 py-2 focus-within:border-[var(--primary)]/50 focus-within:ring-2 focus-within:ring-[var(--primary)]/10">
           <button
             type="button"
@@ -566,9 +709,14 @@ export default function BookChatPanel({
             <Paperclip className="h-4 w-4" />
           </button>
           <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={t("Ask about this page…")}
+            placeholder={
+              cellRef
+                ? "对这一格提问，比如：这里为什么要用字典？"
+                : t("Ask about this page…")
+            }
             rows={1}
             onPaste={handlePaste}
             onCompositionStart={onCompositionStart}
@@ -579,13 +727,13 @@ export default function BookChatPanel({
                 void send();
               }
             }}
-            className="max-h-32 min-h-8 flex-1 resize-none bg-transparent px-1 py-1.5 text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
+            className="max-h-44 min-h-8 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1.5 text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
           />
           <button
             type="submit"
             disabled={
               busy ||
-              (!input.trim() && attachments.length === 0) ||
+              (!input.trim() && attachments.length === 0 && !cellRef) ||
               !book ||
               !page
             }

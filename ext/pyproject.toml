@@ -3,7 +3,7 @@ name = "deeptutor-ext"
 version = "0.1.0"
 description = "DeepTutor 本地扩展：课程导入与 notebook 执行"
 requires-python = ">=3.11"
-dependencies = ["httpx", "websockets"]
+dependencies = ["httpx", "websockets", "python-multipart"]
 
 [build-system]
 requires = ["setuptools>=68"]

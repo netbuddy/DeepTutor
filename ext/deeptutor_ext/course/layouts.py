@@ -307,17 +307,110 @@ _MDX_KEEP_INNER = re.compile(
 )
 _MDX_OTHER_PAIR = re.compile(r"<([A-Z][\w.]*)\b[^>]*>(.*?)</\1>", re.S)
 _CODE_FENCE = re.compile(r"^```([\w+-]*)\n(.*?)^```", re.M | re.S)
-_RUNNABLE_LANGS = {"py", "python", "python3"}
+# 哪些语言的代码围栏可以点运行。Go 走的是「把这一页到这里为止的代码凑齐一起编译」，
+# 与 Python 的长驻内核不同，但对读者来说都是一个「运行」按钮。
+_RUNNABLE_LANGS = {
+    "py", "python", "python3",
+    "go", "golang",
+    "js", "javascript", "node", "mjs",
+    "ts", "typescript",
+    "rs", "rust",
+}
+
+# 这几种围栏不是代码，是图。书引擎的 figure 块能把它们渲染成真图形，
+# 全部在浏览器里画，不出网也不需要图片文件。
+FIGURE_LANGS = {"mermaid", "svg", "chartjs"}
+
+# 自测题围栏。内容是 YAML，一题一项。
+QUIZ_LANGS = {"quiz"}
+
+# 提示框：引用段落以 > [!要点] 这类标记开头。四种样式对应书引擎的四种 callout。
+CALLOUT_KINDS = {
+    "要点": "key_idea",
+    "坑": "common_pitfall",
+    "小结": "summary",
+    "提示": "tip",
+    "key_idea": "key_idea",
+    "common_pitfall": "common_pitfall",
+    "summary": "summary",
+    "tip": "tip",
+}
+
+_CALLOUT_RE = re.compile(r"^>\s*\[!([^\]]+)\]\s*\n((?:>.*\n?)*)", re.M)
+
+
+def _split_callouts(text: str, label: str) -> list["Fragment"]:
+    """把一段正文按提示框标记切开：标记内的成 callout，标记外的仍是讲解。"""
+    out: list[Fragment] = []
+    cursor = 0
+    for match in _CALLOUT_RE.finditer(text):
+        before = text[cursor : match.start()].strip()
+        if before:
+            out += _fragments_from_markdown(before, label)
+        kind = CALLOUT_KINDS.get(match.group(1).strip())
+        body = "\n".join(
+            line.lstrip(">").strip() for line in match.group(2).splitlines()
+        ).strip()
+        if kind and body:
+            out.append(
+                Fragment(
+                    kind="callout",
+                    body=body,
+                    title=match.group(1).strip(),
+                    language=kind,
+                    runnable=False,
+                    cwd="",
+                    cell_index=0,
+                    source_label=label,
+                )
+            )
+        elif body:
+            # 不认识的标记按普通引用处理，不要把内容吞掉
+            out += _fragments_from_markdown(match.group(0), label)
+        cursor = match.end()
+    tail = text[cursor:].strip()
+    if tail:
+        out += _fragments_from_markdown(tail, label)
+    return out
 
 
 def clean_mdx(text: str) -> str:
-    """把 MDX 里的组件标记去掉，只留下 Markdown 能表达的部分。"""
+    """把 MDX 里的组件标记去掉，只留下 Markdown 能表达的部分。
+
+    **代码围栏里的内容一个字都不能动。** 这些清洗规则是冲着 MDX 的 JSX 语法去的，
+    而它们在代码里全都有合法含义：``import`` 是 Python 和 Go 的导入语句，
+    尖括号是泛型和比较运算符，``[[...]]`` 是嵌套下标。误清洗的后果很隐蔽——
+    代码看着还在，跑起来才发现导入语句没了。所以先把围栏整段挖出来，
+    清洗完再原样放回去。
+    """
+    fences: list[str] = []
+
+    def stash(match: re.Match) -> str:
+        fences.append(match.group(0))
+        return f"\x00FENCE{len(fences) - 1}\x00"
+
+    text = _CODE_FENCE.sub(stash, text)
+
     text = _MDX_IMPORT.sub("", text)
     text = _MDX_KEEP_INNER.sub(lambda m: m.group(2), text)
     text = _MDX_OTHER_PAIR.sub(lambda m: m.group(2), text)
     text = _MDX_SELF_CLOSING.sub("", text)
     text = re.sub(r"\[\[.*?\]\]", "", text)  # 标题后缀的锚点
-    return re.sub(r"\n{3,}", "\n\n", text).strip()
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+    def restore(match: re.Match) -> str:
+        return fences[int(match.group(1))]
+
+    return re.sub(r"\x00FENCE(\d+)\x00", restore, text)
+
+
+def _fence_kind(language: str, runnable: bool) -> str:
+    """一个围栏该变成哪种片段。"""
+    if language in FIGURE_LANGS:
+        return "figure"
+    if language in QUIZ_LANGS:
+        return "quiz"
+    return "code" if runnable else "text"
 
 
 def _split_prose_and_code(text: str, label: str, cwd: str) -> list[Fragment]:
@@ -328,16 +421,33 @@ def _split_prose_and_code(text: str, label: str, cwd: str) -> list[Fragment]:
     for match in _CODE_FENCE.finditer(text):
         prose = text[cursor : match.start()].strip()
         if prose:
-            fragments += _fragments_from_markdown(prose, label)
+            fragments += _split_callouts(prose, label)
         language = (match.group(1) or "").lower()
         code = match.group(2).rstrip()
         if code.strip():
             index += 1
             runnable = language in _RUNNABLE_LANGS
+            if language in FIGURE_LANGS:
+                runnable = False
+            if language in ("rs", "rust") and not re.search(
+                r"^\s*(?:pub\s+)?(?:fn|struct|enum|impl|trait|use|mod|const|static|type)\b",
+                code,
+                re.M,
+            ):
+                # 讲义里引用别处定义做对比的 Rust 片段没有任何顶层项，
+                # 当作可运行会直接编译失败——那不是学生的错。
+                runnable = False
+            if language in ("go", "golang") and not re.search(r"^\s*package\s+\w", code, re.M):
+                # Go 的可编译单元必须有 package 声明。讲义里引用别处定义做对比的片段
+                # 没有它，当作可运行会直接编译失败——那不是学生的错，是这段本来就
+                # 只用于展示。这类片段保留高亮，但不给运行按钮。
+                runnable = False
             fragments.append(
                 Fragment(
-                    kind="code" if runnable else "text",
-                    body=code if runnable else f"```{language}\n{code}\n```",
+                    kind=_fence_kind(language, runnable),
+                    body=code
+                    if runnable or language in FIGURE_LANGS or language in QUIZ_LANGS
+                    else f"```{language}\n{code}\n```",
                     title=f"第 {index} 段代码" if runnable else "",
                     language=language or "text",
                     runnable=runnable,
@@ -349,7 +459,7 @@ def _split_prose_and_code(text: str, label: str, cwd: str) -> list[Fragment]:
         cursor = match.end()
     tail = text[cursor:].strip()
     if tail:
-        fragments += _fragments_from_markdown(tail, label)
+        fragments += _split_callouts(tail, label)
     return fragments
 
 

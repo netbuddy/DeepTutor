@@ -8,6 +8,11 @@
 # 用法：
 #   bin/kernel-container.sh start | stop | status | logs
 #
+# 关于限额：进程数上限给到 2048 是因为 Go 的工具链很吃进程——编译一次会拉起
+# 编译器、链接器、vet 等好几个子进程，再叠加几个长驻的 Python 内核（每个内核自己
+# 就有若干线程），256 会撞上 "failed to create new OS thread"。内存给 6 GB 同理：
+# Go 编译加上加载了数据集的 Python 内核，4 GB 会紧张。
+#
 # 访问口令每次启动重新生成，写进 .kernel-token（仅本人可读），不打印、不入日志。
 
 set -euo pipefail
@@ -66,7 +71,7 @@ cmd_start() {
     -v "${WORKSPACE_DIR}:${WORKSPACE_DIR}" \
     -v "${COURSES_DIR}:${COURSES_DIR}:ro" \
     -e "HF_HOME=${WORKSPACE_DIR}/.hf-cache" \
-    --memory 4g --cpus 2 --pids-limit 256 \
+    --memory 6g --cpus 2 --pids-limit 2048 \
     --user 1000:100 \
     "${IMAGE}" \
     start-notebook.py \

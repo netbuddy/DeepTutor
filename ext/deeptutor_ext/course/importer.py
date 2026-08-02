@@ -26,13 +26,17 @@ class ImportStats:
     pages: int = 0
     text_blocks: int = 0
     code_blocks: int = 0
+    figure_blocks: int = 0
+    callout_blocks: int = 0
+    quiz_blocks: int = 0
     runnable_cells: int = 0
     skipped_files: int = 0
 
     def describe(self) -> str:
         text = (
             f"{self.chapters} 章、{self.pages} 页，"
-            f"其中讲解块 {self.text_blocks} 个、代码块 {self.code_blocks} 个"
+            f"其中讲解块 {self.text_blocks} 个、代码块 {self.code_blocks} 个、"
+            f"图 {self.figure_blocks} 张"
             f"（可运行的 {self.runnable_cells} 个）"
         )
         if self.skipped_files:
@@ -45,6 +49,9 @@ class ImportStats:
             "pages": self.pages,
             "text_blocks": self.text_blocks,
             "code_blocks": self.code_blocks,
+            "figure_blocks": self.figure_blocks,
+            "callout_blocks": self.callout_blocks,
+            "quiz_blocks": self.quiz_blocks,
             "runnable_cells": self.runnable_cells,
             "skipped_files": self.skipped_files,
         }
@@ -57,7 +64,18 @@ def book_id_for(slug: str) -> str:
 class CourseImporter:
     """把课程目录读成一本 Book 并存下来。"""
 
-    def __init__(self, course_root: str | Path, *, title: str = "", language: str = "zh") -> None:
+    def __init__(
+        self,
+        course_root: str | Path,
+        *,
+        title: str = "",
+        language: str = "zh",
+        origin: str = "",
+    ) -> None:
+        # course_root 是内核容器看得见的那份副本；origin 是你当初传进来的来源
+        # （可能是 Git 地址，也可能是本机上另一个目录）。两个都要记，
+        # 因为「重新导入」要读的是后者。
+        self.origin = origin
         self.root = Path(course_root).expanduser().resolve()
         if not self.root.is_dir():
             raise FileNotFoundError(f"课程目录不存在：{self.root}")
@@ -76,7 +94,94 @@ class CourseImporter:
             type=BlockType.TEXT,
             status=BlockStatus.READY,
             title=fragment.title,
-            payload={"markdown": fragment.body, "text": fragment.body},
+            # 字段名必须是 body——TextBlock 组件只读这一个。
+            # 写成 markdown / text 的后果是：块存在、大纲里看得到、页面上一片空白。
+            payload={"body": fragment.body, "markdown": fragment.body, "text": fragment.body},
+            metadata={"origin": "course_import", "source": fragment.source_label},
+        )
+
+    def _callout_block(self, fragment):
+        """提示框。fragment.language 已经是书引擎认的那四种样式之一。"""
+        from deeptutor.book.models import Block, BlockStatus, BlockType
+
+        self.stats.callout_blocks += 1
+        return Block(
+            type=BlockType.CALLOUT,
+            status=BlockStatus.READY,
+            title=fragment.title,
+            payload={
+                # 字段名跟着 CalloutBlock 组件走：它读 variant / label / body，
+                # 写成 markdown / text 会让框子渲染出来但里面是空的。
+                "variant": fragment.language,
+                "label": fragment.title or fragment.language,
+                "body": fragment.body,
+            },
+            metadata={"origin": "course_import", "source": fragment.source_label},
+        )
+
+    def _quiz_block(self, fragment):
+        """自测题。围栏里是 YAML，一题一项。
+
+        解析失败不能让整门课导不进来——退化成一段普通的讲解文字，
+        并在日志里说明是哪一段有问题。
+        """
+        from deeptutor.book.models import Block, BlockStatus, BlockType
+
+        try:
+            import yaml
+
+            items = yaml.safe_load(fragment.body) or []
+        except Exception as exc:
+            logger.warning("自测题解析失败（%s）：%s", fragment.source_label, exc)
+            return self._text_block(fragment)
+
+        questions = []
+        for i, item in enumerate(items if isinstance(items, list) else [], start=1):
+            if not isinstance(item, dict):
+                continue
+            options = item.get("选项") or item.get("options") or {}
+            questions.append(
+                {
+                    "question_id": f"q{i}",
+                    "question": str(item.get("题目") or item.get("question") or ""),
+                    # 题型字符串要用前端认得的那几个。single_choice 不在别名表里，
+                    # 会被归成开放题——选项就白写了。
+                    "question_type": "choice" if options else "short_answer",
+                    "options": {str(k): str(v) for k, v in options.items()} or None,
+                    "correct_answer": str(item.get("答案") or item.get("answer") or ""),
+                    "explanation": str(item.get("解析") or item.get("explanation") or ""),
+                }
+            )
+        if not questions:
+            return self._text_block(fragment)
+
+        self.stats.quiz_blocks += 1
+        return Block(
+            type=BlockType.QUIZ,
+            status=BlockStatus.READY,
+            title=fragment.title or "随堂自测",
+            payload={"questions": questions},
+            metadata={"origin": "course_import", "source": fragment.source_label},
+        )
+
+    def _figure_block(self, fragment):
+        """图表围栏：交给书引擎的 figure 块，前端会把它画出来。
+
+        payload 的形状要跟着 FigureBlock 组件走：它读 payload["code"]["language"]
+        和 payload["code"]["content"]，认 mermaid / svg / chartjs 三种。
+        """
+        from deeptutor.book.models import Block, BlockStatus, BlockType
+
+        self.stats.figure_blocks += 1
+        return Block(
+            type=BlockType.FIGURE,
+            status=BlockStatus.READY,
+            title=fragment.title,
+            payload={
+                "code": {"language": fragment.language, "content": fragment.body},
+                "render_type": fragment.language,
+                "description": fragment.title or "",
+            },
             metadata={"origin": "course_import", "source": fragment.source_label},
         )
 
@@ -132,6 +237,7 @@ class CourseImporter:
                 "origin": "course_import",
                 "course_slug": slug,
                 "course_root": str(self.root),
+                "course_origin": self.origin or str(self.root),
                 "layout": self.tree.layout,
                 "imported_at": time.time(),
             },
@@ -159,11 +265,13 @@ class CourseImporter:
                     order=page_order,
                 )
                 for fragment in lesson.fragments:
-                    page.blocks.append(
-                        self._code_block(fragment)
-                        if fragment.kind == "code"
-                        else self._text_block(fragment)
-                    )
+                    builder = {
+                        "figure": self._figure_block,
+                        "quiz": self._quiz_block,
+                        "callout": self._callout_block,
+                        "code": self._code_block,
+                    }.get(fragment.kind, self._text_block)
+                    page.blocks.append(builder(fragment))
                 if not page.blocks:
                     continue
                 chapter.page_ids.append(page.id)

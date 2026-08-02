@@ -128,7 +128,9 @@ class CourseService:
     ) -> CourseRecord:
         """取来源、导成书、登记。不建检索索引——那一步慢，单独触发。"""
         fetched = fetch(origin, slug=slugify(slug) if slug else "", branch=branch, replace=replace)
-        importer = CourseImporter(fetched.path, title=title, language=language)
+        importer = CourseImporter(
+            fetched.path, title=title, language=language, origin=fetched.origin
+        )
         book_id = importer.save(slug=fetched.slug)
         tree = importer.tree
 

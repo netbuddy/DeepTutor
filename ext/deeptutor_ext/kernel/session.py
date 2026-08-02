@@ -109,6 +109,7 @@ class SessionManager:
     async def _drop_locked(self, session_key: str) -> None:
         session = self._sessions.pop(session_key, None)
         if session is not None:
+            # shutdown_kernel 内部会先关掉那条 WebSocket 再删内核，这里不必重复。
             await client.shutdown_kernel(session.kernel_id)
 
     async def _reap_locked(self) -> None:
@@ -131,8 +132,29 @@ class SessionManager:
     # ── 执行 ────────────────────────────────────────────────────────────
 
     async def _chdir(self, session: KernelSession, cwd: str) -> None:
-        """把内核的工作目录切到 *cwd*。课程代码全用相对路径，这一步不能省。"""
-        code = f"import os\nos.chdir({cwd!r})"
+        """把内核的工作目录切到 *cwd*，并让课程自带的库可以被 import。
+
+        课程代码全用相对路径，切目录这一步不能省。
+
+        顺带把 cwd 及其上溯三层加进 ``sys.path``：讲义每章开头本来要重贴两百行
+        累积代码，有了这条通道就可以把它们收进课程目录里的一个 ``agentlib``，
+        讲义只写一行 ``from agentlib import *``。上溯三层是因为工作目录形如
+        ``courses/<课>/chapters/zh/partN``，库放在 ``chapters/zh/`` 或课程根
+        都能被找到。
+        """
+        code = (
+            "import os, sys\n"
+            f"os.chdir({cwd!r})\n"
+            "_here = os.getcwd()\n"
+            "for _ in range(4):\n"
+            "    if _here not in sys.path:\n"
+            "        sys.path.insert(0, _here)\n"
+            "    _parent = os.path.dirname(_here)\n"
+            "    if _parent == _here:\n"
+            "        break\n"
+            "    _here = _parent\n"
+            "del _here, _parent\n"
+        )
         result = await client.execute(
             session.kernel_id,
             code,
@@ -154,17 +176,36 @@ class SessionManager:
         cwd: str = "",
         timeout_s: int | None = None,
     ) -> CellOutput:
-        session = await self.get(session_key, cwd=cwd)
-        result = await client.execute(
-            session.kernel_id,
-            code,
-            artifact_dir=session.workdir,
-            url_prefix=session.url_prefix,
-            timeout_s=timeout_s,
-        )
-        session.last_used = time.time()
-        session.executions += 1
-        return result
+        last_error: client.KernelUnavailable | None = None
+
+        # 试两次。第一次失败多半是内核冷启动没赶上握手，或者上一个内核刚被回收、
+        # 连接表里留了个坏的。这两种情况重来一次就好，让学生自己点「重置再试」
+        # 是把我们的实现细节推给了学生。
+        for attempt in (1, 2):
+            try:
+                # 取内核也要包在 try 里：失败最常发生在创建内核这一步
+                # （容器同时起停十几个内核时会变慢），只包住执行等于没有重试。
+                session = await self.get(session_key, cwd=cwd)
+                result = await client.execute(
+                    session.kernel_id,
+                    code,
+                    artifact_dir=session.workdir,
+                    url_prefix=session.url_prefix,
+                    timeout_s=timeout_s,
+                )
+            except client.KernelUnavailable as exc:
+                last_error = exc
+                logger.warning(
+                    "会话 %s 第 %d 次执行没能连上内核：%s", session_key, attempt, exc
+                )
+                await self.reset(session_key)
+                continue
+            session.last_used = time.time()
+            session.executions += 1
+            return result
+
+        assert last_error is not None
+        raise last_error
 
     def describe(self) -> list[dict[str, object]]:
         """给自检与状态接口看的快照。"""

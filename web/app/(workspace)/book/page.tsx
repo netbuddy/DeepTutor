@@ -31,7 +31,9 @@ import {
   reduceBookEvent,
 } from "@/lib/book-progress";
 
-import BookChatPanel from "./components/BookChatPanel";
+import BookChatPanel, {
+  type CellReference,
+} from "./components/BookChatPanel";
 import BookCreator from "./components/BookCreator";
 import BookHealthBanner from "./components/BookHealthBanner";
 import BookLibrary from "./components/BookLibrary";
@@ -95,29 +97,19 @@ function BookPageInner() {
     string | null
   >(null);
   const [chatOpen, setChatOpen] = useState(false);
-  const [cellQuestion, setCellQuestion] = useState("");
+  const [cellRef, setCellRef] = useState<CellReference | null>(null);
 
   // 可运行单元格上的「问助教」按钮派发这个事件，带着那一格的代码与运行结果。
+  // 这里只把它存成一条引用，不去替学生写问题——问题该由他自己写。
   useEffect(() => {
     function onAskAboutCell(event: Event) {
       const detail = (event as CustomEvent).detail || {};
-      const lines = [
-        `我在看${detail.cellIndex ? `第 ${detail.cellIndex} 格` : "这一格"}代码：`,
-        "```python",
-        String(detail.code || "").slice(0, 2000),
-        "```",
-      ];
-      if (detail.error) {
-        lines.push(`它报错了：${detail.error}`, "这是什么原因，该怎么改？");
-      } else if (detail.stdout || detail.textResult) {
-        lines.push(
-          `运行结果是：${String(detail.stdout || detail.textResult).slice(0, 800)}`,
-          "请解释这段代码做了什么，结果说明了什么。",
-        );
-      } else {
-        lines.push("请解释这段代码做了什么。");
-      }
-      setCellQuestion(lines.join("\n"));
+      setCellRef({
+        label: detail.cellIndex ? `第 ${detail.cellIndex} 格代码` : "这一格代码",
+        code: String(detail.code || ""),
+        output: String(detail.stdout || detail.textResult || ""),
+        error: String(detail.error || ""),
+      });
       setChatOpen(true);
     }
     window.addEventListener("ext:ask-about-cell", onAskAboutCell);
@@ -264,6 +256,51 @@ function BookPageInner() {
 
   const handleRebuildBook = async () => {
     if (!detail) return;
+
+    // 导入的课程走另一条路。上游的「重建」会删光全部页面再让模型重新生成，
+    // 而课程的页面是人写的讲义——那样点一下就全没了。对课程来说，
+    // 「重建」应该是从课程原稿重新读一遍。
+    const meta = (detail.book.metadata || {}) as Record<string, unknown>;
+    const courseSlug = String(meta.course_slug || "");
+    // 优先用原稿位置：course_root 是内核容器看得见的那份副本，
+    // 改了真正的原稿它不会变。course_origin 才是你当初传进来的来源。
+    const courseRoot = String(meta.course_origin || meta.course_root || "");
+    if (meta.origin === "course_import" && courseSlug && courseRoot) {
+      if (
+        !confirm(
+          `从课程原稿重新导入这本书？\n\n原稿目录：${courseRoot}\n\n` +
+            `页面内容会按原稿刷新，模型不会改写任何内容。`,
+        )
+      ) {
+        return;
+      }
+      setRebuildingBook(true);
+      try {
+        const response = await fetch("/api/v1/ext/course/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            origin: courseRoot,
+            slug: courseSlug,
+            title: detail.book.title,
+            replace: true,
+          }),
+        });
+        if (!response.ok) {
+          const detailText = await response.text();
+          alert(`重新导入失败：${detailText.slice(0, 300)}`);
+          return;
+        }
+        const refreshed = await loadBookDetail(detail.book.id);
+        setSelectedPageId(refreshed.pages[0]?.id || null);
+        setView("reader");
+        await refreshBooks();
+      } finally {
+        setRebuildingBook(false);
+      }
+      return;
+    }
+
     if (
       !confirm(
         t(
@@ -637,7 +674,8 @@ function BookPageInner() {
             onSessionResolved={(sessionId) =>
               void handlePageChatSession(sessionId)
             }
-            prefill={cellQuestion}
+            cellRef={cellRef}
+            onClearCellRef={() => setCellRef(null)}
           />
         )}
       </main>

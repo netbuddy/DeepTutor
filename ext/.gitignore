@@ -4,3 +4,4 @@ __pycache__/
 .kernel-token
 .pids/
 data/
+kernel-image/vendor/
