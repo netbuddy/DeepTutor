@@ -41,3 +41,14 @@
     title: 会话树
   - local: part4/16
     title: 上下文压缩
+
+- title: 第五部分 · 干活的 agent
+  sections:
+  - local: part5/17
+    title: 编码工具
+  - local: part5/18
+    title: 权限与沙箱
+  - local: part5/19
+    title: 技能
+  - local: part5/20
+    title: 评估
