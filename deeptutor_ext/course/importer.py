@@ -94,7 +94,9 @@ class CourseImporter:
             type=BlockType.TEXT,
             status=BlockStatus.READY,
             title=fragment.title,
-            payload={"markdown": fragment.body, "text": fragment.body},
+            # 字段名必须是 body——TextBlock 组件只读这一个。
+            # 写成 markdown / text 的后果是：块存在、大纲里看得到、页面上一片空白。
+            payload={"body": fragment.body, "markdown": fragment.body, "text": fragment.body},
             metadata={"origin": "course_import", "source": fragment.source_label},
         )
 
