@@ -132,8 +132,29 @@ class SessionManager:
     # ── 执行 ────────────────────────────────────────────────────────────
 
     async def _chdir(self, session: KernelSession, cwd: str) -> None:
-        """把内核的工作目录切到 *cwd*。课程代码全用相对路径，这一步不能省。"""
-        code = f"import os\nos.chdir({cwd!r})"
+        """把内核的工作目录切到 *cwd*，并让课程自带的库可以被 import。
+
+        课程代码全用相对路径，切目录这一步不能省。
+
+        顺带把 cwd 及其上溯三层加进 ``sys.path``：讲义每章开头本来要重贴两百行
+        累积代码，有了这条通道就可以把它们收进课程目录里的一个 ``agentlib``，
+        讲义只写一行 ``from agentlib import *``。上溯三层是因为工作目录形如
+        ``courses/<课>/chapters/zh/partN``，库放在 ``chapters/zh/`` 或课程根
+        都能被找到。
+        """
+        code = (
+            "import os, sys\n"
+            f"os.chdir({cwd!r})\n"
+            "_here = os.getcwd()\n"
+            "for _ in range(4):\n"
+            "    if _here not in sys.path:\n"
+            "        sys.path.insert(0, _here)\n"
+            "    _parent = os.path.dirname(_here)\n"
+            "    if _parent == _here:\n"
+            "        break\n"
+            "    _here = _parent\n"
+            "del _here, _parent\n"
+        )
         result = await client.execute(
             session.kernel_id,
             code,

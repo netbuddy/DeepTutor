@@ -26,13 +26,15 @@ class ImportStats:
     pages: int = 0
     text_blocks: int = 0
     code_blocks: int = 0
+    figure_blocks: int = 0
     runnable_cells: int = 0
     skipped_files: int = 0
 
     def describe(self) -> str:
         text = (
             f"{self.chapters} 章、{self.pages} 页，"
-            f"其中讲解块 {self.text_blocks} 个、代码块 {self.code_blocks} 个"
+            f"其中讲解块 {self.text_blocks} 个、代码块 {self.code_blocks} 个、"
+            f"图 {self.figure_blocks} 张"
             f"（可运行的 {self.runnable_cells} 个）"
         )
         if self.skipped_files:
@@ -45,6 +47,7 @@ class ImportStats:
             "pages": self.pages,
             "text_blocks": self.text_blocks,
             "code_blocks": self.code_blocks,
+            "figure_blocks": self.figure_blocks,
             "runnable_cells": self.runnable_cells,
             "skipped_files": self.skipped_files,
         }
@@ -77,6 +80,27 @@ class CourseImporter:
             status=BlockStatus.READY,
             title=fragment.title,
             payload={"markdown": fragment.body, "text": fragment.body},
+            metadata={"origin": "course_import", "source": fragment.source_label},
+        )
+
+    def _figure_block(self, fragment):
+        """图表围栏：交给书引擎的 figure 块，前端会把它画出来。
+
+        payload 的形状要跟着 FigureBlock 组件走：它读 payload["code"]["language"]
+        和 payload["code"]["content"]，认 mermaid / svg / chartjs 三种。
+        """
+        from deeptutor.book.models import Block, BlockStatus, BlockType
+
+        self.stats.figure_blocks += 1
+        return Block(
+            type=BlockType.FIGURE,
+            status=BlockStatus.READY,
+            title=fragment.title,
+            payload={
+                "code": {"language": fragment.language, "content": fragment.body},
+                "render_type": fragment.language,
+                "description": fragment.title or "",
+            },
             metadata={"origin": "course_import", "source": fragment.source_label},
         )
 
@@ -159,11 +183,12 @@ class CourseImporter:
                     order=page_order,
                 )
                 for fragment in lesson.fragments:
-                    page.blocks.append(
-                        self._code_block(fragment)
-                        if fragment.kind == "code"
-                        else self._text_block(fragment)
-                    )
+                    if fragment.kind == "figure":
+                        page.blocks.append(self._figure_block(fragment))
+                    elif fragment.kind == "code":
+                        page.blocks.append(self._code_block(fragment))
+                    else:
+                        page.blocks.append(self._text_block(fragment))
                 if not page.blocks:
                     continue
                 chapter.page_ids.append(page.id)

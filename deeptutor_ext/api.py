@@ -82,6 +82,34 @@ def _block_language(block) -> str:
     return str((block.payload or {}).get("language") or "python").strip().lower()
 
 
+def _prelude_files(page) -> dict[str, str]:
+    """读这一页所在目录下 ``_prelude/`` 里的 .go 文件，作为累积编译的底稿。
+
+    没有这个目录就返回空字典——旧讲义（自带完整「本章起点」那种）照跑不误。
+    """
+    from pathlib import Path as _Path
+
+    cwd = ""
+    for block in _runnable_blocks(page):
+        cwd = str(((block.payload or {}).get("notebook") or {}).get("cwd") or "")
+        if cwd:
+            break
+    if not cwd:
+        return {}
+
+    prelude_dir = _Path(cwd) / "_prelude"
+    if not prelude_dir.is_dir():
+        return {}
+
+    out: dict[str, str] = {}
+    for path in sorted(prelude_dir.glob("*.go")):
+        try:
+            out[path.name] = path.read_text(encoding="utf-8")
+        except OSError:
+            logger.warning("读不了底稿文件 %s，跳过", path)
+    return out
+
+
 def _go_snippet(page, target_block_id: str, override_code: str, session_key: str) -> str:
     """把这一页到目标格为止的所有 Go 代码凑齐，生成一段编译并运行它的 Python。
 
@@ -92,6 +120,15 @@ def _go_snippet(page, target_block_id: str, override_code: str, session_key: str
 
     files: dict[str, str] = {}
     runnable = False
+
+    # 先铺这一部分的公共底稿。讲义因此不必每章开头重贴一遍前面章节的成果，
+    # 而是在 <本页所在目录>/_prelude/ 放几个 .go 文件。
+    #
+    # 同名以页面里的格子为准（下面的循环后写覆盖先写），这样学生想改掉某个
+    # 铺底文件时，写一个同名的格子就行。
+    for name, body in _prelude_files(page).items():
+        files[name] = body
+
     for index, block in enumerate(_runnable_blocks(page), start=1):
         if _block_language(block) not in ("go", "golang"):
             continue

@@ -311,6 +311,10 @@ _CODE_FENCE = re.compile(r"^```([\w+-]*)\n(.*?)^```", re.M | re.S)
 # 与 Python 的长驻内核不同，但对读者来说都是一个「运行」按钮。
 _RUNNABLE_LANGS = {"py", "python", "python3", "go", "golang"}
 
+# 这几种围栏不是代码，是图。书引擎的 figure 块能把它们渲染成真图形，
+# 全部在浏览器里画，不出网也不需要图片文件。
+FIGURE_LANGS = {"mermaid", "svg", "chartjs"}
+
 
 def clean_mdx(text: str) -> str:
     """把 MDX 里的组件标记去掉，只留下 Markdown 能表达的部分。
@@ -356,6 +360,8 @@ def _split_prose_and_code(text: str, label: str, cwd: str) -> list[Fragment]:
         if code.strip():
             index += 1
             runnable = language in _RUNNABLE_LANGS
+            if language in FIGURE_LANGS:
+                runnable = False
             if language in ("go", "golang") and not re.search(r"^\s*package\s+\w", code, re.M):
                 # Go 的可编译单元必须有 package 声明。讲义里引用别处定义做对比的片段
                 # 没有它，当作可运行会直接编译失败——那不是学生的错，是这段本来就
@@ -363,8 +369,12 @@ def _split_prose_and_code(text: str, label: str, cwd: str) -> list[Fragment]:
                 runnable = False
             fragments.append(
                 Fragment(
-                    kind="code" if runnable else "text",
-                    body=code if runnable else f"```{language}\n{code}\n```",
+                    kind="figure"
+                    if language in FIGURE_LANGS
+                    else ("code" if runnable else "text"),
+                    body=code
+                    if runnable or language in FIGURE_LANGS
+                    else f"```{language}\n{code}\n```",
                     title=f"第 {index} 段代码" if runnable else "",
                     language=language or "text",
                     runnable=runnable,
