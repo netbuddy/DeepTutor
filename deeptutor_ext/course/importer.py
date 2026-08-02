@@ -64,7 +64,18 @@ def book_id_for(slug: str) -> str:
 class CourseImporter:
     """把课程目录读成一本 Book 并存下来。"""
 
-    def __init__(self, course_root: str | Path, *, title: str = "", language: str = "zh") -> None:
+    def __init__(
+        self,
+        course_root: str | Path,
+        *,
+        title: str = "",
+        language: str = "zh",
+        origin: str = "",
+    ) -> None:
+        # course_root 是内核容器看得见的那份副本；origin 是你当初传进来的来源
+        # （可能是 Git 地址，也可能是本机上另一个目录）。两个都要记，
+        # 因为「重新导入」要读的是后者。
+        self.origin = origin
         self.root = Path(course_root).expanduser().resolve()
         if not self.root.is_dir():
             raise FileNotFoundError(f"课程目录不存在：{self.root}")
@@ -224,6 +235,7 @@ class CourseImporter:
                 "origin": "course_import",
                 "course_slug": slug,
                 "course_root": str(self.root),
+                "course_origin": self.origin or str(self.root),
                 "layout": self.tree.layout,
                 "imported_at": time.time(),
             },

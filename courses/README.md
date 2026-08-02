@@ -35,16 +35,19 @@
 
 ## 改完之后怎么重新导入
 
-课程原稿要放在服务器上一个 DeepTutor 能读到的位置（下面用 `~/agent-course/`）：
-
-    rsync -a --delete courses/agent-from-scratch-python/ ~/agent-course/python/
+改完原稿之后，在书的侧栏点「从原稿重新导入」就行——按钮会按下面这条命令
+重新读一遍原稿。想在命令行做也一样：
 
     curl -s -X POST http://127.0.0.1:9188/api/v1/ext/course/create \
       -H 'Content-Type: application/json' \
-      -d '{"origin":"/home/yun/agent-course/python",
-           "slug":"agent-from-scratch-python",
-           "title":"从零实现一个 AI Agent（Python 版）",
-           "replace":true}'
+      -d '{"origin": "/home/yun/DeepTutor-ext/courses/agent-from-scratch-python",
+           "slug": "agent-from-scratch-python",
+           "title": "从零实现一个 AI Agent（Python 版）",
+           "replace": true}'
+
+导入时这个目录会被复制进 `data/user/courses/`。这一步不能省：
+内核容器只挂了那一个目录（只读），课程放在别处它看不见，代码格就跑不起来。
+副本是派生物，改讲义永远改这里的原稿。
 
 `replace:true` 是覆盖同名课程，不会产生第二本书。
 
