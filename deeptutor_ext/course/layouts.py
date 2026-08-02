@@ -309,7 +309,13 @@ _MDX_OTHER_PAIR = re.compile(r"<([A-Z][\w.]*)\b[^>]*>(.*?)</\1>", re.S)
 _CODE_FENCE = re.compile(r"^```([\w+-]*)\n(.*?)^```", re.M | re.S)
 # 哪些语言的代码围栏可以点运行。Go 走的是「把这一页到这里为止的代码凑齐一起编译」，
 # 与 Python 的长驻内核不同，但对读者来说都是一个「运行」按钮。
-_RUNNABLE_LANGS = {"py", "python", "python3", "go", "golang"}
+_RUNNABLE_LANGS = {
+    "py", "python", "python3",
+    "go", "golang",
+    "js", "javascript", "node", "mjs",
+    "ts", "typescript",
+    "rs", "rust",
+}
 
 # 这几种围栏不是代码，是图。书引擎的 figure 块能把它们渲染成真图形，
 # 全部在浏览器里画，不出网也不需要图片文件。
@@ -422,6 +428,14 @@ def _split_prose_and_code(text: str, label: str, cwd: str) -> list[Fragment]:
             index += 1
             runnable = language in _RUNNABLE_LANGS
             if language in FIGURE_LANGS:
+                runnable = False
+            if language in ("rs", "rust") and not re.search(
+                r"^\s*(?:pub\s+)?(?:fn|struct|enum|impl|trait|use|mod|const|static|type)\b",
+                code,
+                re.M,
+            ):
+                # 讲义里引用别处定义做对比的 Rust 片段没有任何顶层项，
+                # 当作可运行会直接编译失败——那不是学生的错。
                 runnable = False
             if language in ("go", "golang") and not re.search(r"^\s*package\s+\w", code, re.M):
                 # Go 的可编译单元必须有 package 声明。讲义里引用别处定义做对比的片段

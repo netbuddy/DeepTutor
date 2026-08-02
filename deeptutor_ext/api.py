@@ -83,31 +83,96 @@ def _block_language(block) -> str:
 
 
 def _prelude_files(page) -> dict[str, str]:
-    """读这一页所在目录下 ``_prelude/`` 里的 .go 文件，作为累积编译的底稿。
+    """读这一页的累积编译底稿，作为讲义每章开头那两百行的替代。
 
-    没有这个目录就返回空字典——旧讲义（自带完整「本章起点」那种）照跑不误。
+    找两个位置，先细后粗：
+
+    * ``<部分目录>/_prelude/<课号>/*.go`` —— 只对这一课生效；
+    * ``<部分目录>/_prelude/*.go`` —— 对这一部分的所有课生效。
+
+    粒度必须能细到「一课」：同一个部分里，教某个类型怎么写的那一课
+    自己要定义它，而给后面几课准备的底稿里已经有一个，一起编译会报重复定义。
+
+    两个位置都没有就返回空字典——旧讲义（自带完整「本章起点」那种）照跑不误。
     """
     from pathlib import Path as _Path
 
     cwd = ""
+    source = ""
     for block in _runnable_blocks(page):
-        cwd = str(((block.payload or {}).get("notebook") or {}).get("cwd") or "")
+        notebook = (block.payload or {}).get("notebook") or {}
+        cwd = str(notebook.get("cwd") or "")
+        source = str(notebook.get("source") or "")
         if cwd:
             break
     if not cwd:
         return {}
 
-    prelude_dir = _Path(cwd) / "_prelude"
-    if not prelude_dir.is_dir():
-        return {}
+    base = _Path(cwd) / "_prelude"
+    # source 形如 chapters/zh/part3/9.md，课号就是文件名去掉后缀
+    lesson = _Path(source).stem if source else ""
+    for candidate in ([base / lesson] if lesson else []) + [base]:
+        if not candidate.is_dir():
+            continue
+        out: dict[str, str] = {}
+        for path in sorted(candidate.glob("*.go")):
+            try:
+                out[path.name] = path.read_text(encoding="utf-8")
+            except OSError:
+                logger.warning("读不了底稿文件 %s，跳过", path)
+        if out:
+            return out
+    return {}
 
-    out: dict[str, str] = {}
-    for path in sorted(prelude_dir.glob("*.go")):
-        try:
-            out[path.name] = path.read_text(encoding="utf-8")
-        except OSError:
-            logger.warning("读不了底稿文件 %s，跳过", path)
-    return out
+
+_CONCAT_LANGS = {"js", "javascript", "node", "mjs", "ts", "typescript", "rs", "rust"}
+
+
+def _concat_snippet(
+    page, target_block_id: str, override_code: str, session_key: str, language: str
+) -> str:
+    """把这一页到目标格为止的同语言代码凑齐，生成一段跑它的 Python。
+
+    和 Go 那条路的区别只在「怎么凑」：Go 是多文件同包编译，这里是拼成一份源码。
+    拼接的理由与代价写在 kernel/polyglot.py 的模块说明里。
+    """
+    from deeptutor_ext.kernel import (
+        build_node_snippet,
+        build_rust_snippet,
+        concat_rust,
+        concat_script,
+    )
+
+    cells: list[str] = []
+    for block in _runnable_blocks(page):
+        if _block_language(block) != language:
+            continue
+        code = str((block.payload or {}).get("code") or "")
+        if block.id == target_block_id and override_code.strip():
+            code = override_code
+        if code.strip():
+            cells.append(code)
+        if block.id == target_block_id:
+            break
+
+    if not cells:
+        raise HTTPException(status_code=400, detail="这一页没有可运行的这种语言的代码。")
+
+    from deeptutor.services.path_service import get_path_service
+
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", session_key)[:64]
+    work_dir = str(
+        get_path_service().get_task_workspace("chat", f"notebook_{safe}") / f"{language}_work"
+    )
+
+    if language in ("rs", "rust"):
+        source, runnable = concat_rust(cells)
+        return build_rust_snippet(source, work_dir=work_dir, runnable=runnable)
+    return build_node_snippet(
+        concat_script(cells),
+        work_dir=work_dir,
+        typescript=language in ("ts", "typescript"),
+    )
 
 
 def _go_snippet(page, target_block_id: str, override_code: str, session_key: str) -> str:
@@ -196,7 +261,24 @@ async def run_cell(body: RunCellRequest) -> dict:
     # Go 走另一条路：它没有长驻状态，只能把到这一格为止的代码凑齐一起编译。
     # 「运行」与「从头跑到这」对 Go 是同一件事，所以这里不分两种情况。
     block = page.block_by_id(body.block_id)
-    if block is not None and _block_language(block) in ("go", "golang"):
+    language = _block_language(block) if block is not None else ""
+
+    # JS / TS / Rust 和 Go 一样没有长驻内核，走「凑齐到这一格再跑」那条路。
+    if block is not None and language in _CONCAT_LANGS:
+        snippet = _concat_snippet(page, body.block_id, body.code, session_key, language)
+        try:
+            result = await manager.execute(
+                session_key, snippet, cwd=cwd, timeout_s=body.timeout_s or 180
+            )
+        except KernelUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        payload = result.to_dict()
+        payload["block_id"] = body.block_id
+        payload["language"] = language
+        payload["preceding"] = []
+        return payload
+
+    if block is not None and language in ("go", "golang"):
         snippet = _go_snippet(page, body.block_id, body.code, session_key)
         try:
             result = await manager.execute(
