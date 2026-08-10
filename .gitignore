@@ -5,3 +5,11 @@ __pycache__/
 .pids/
 data/
 kernel-image/vendor/
+
+# 编辑器临时文件。vim 的交换文件曾被误传进仓库（提交 c208bd1 带进一个 .1.md.swp），
+# 编课程时在 courses/ 下改 Markdown 很容易再犯。
+*.swp
+*.swo
+*.swn
+*~
+.DS_Store
