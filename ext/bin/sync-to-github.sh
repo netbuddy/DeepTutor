@@ -28,7 +28,9 @@ FORK_URL="${FORK_URL:-https://github.com/netbuddy/DeepTutor.git}"
 FORK_BRANCH="${FORK_BRANCH:-feat/course-and-notebook}"
 EXT_BRANCH="${EXT_BRANCH:-master}"
 WORK_DIR="${WORK_DIR:-$HOME/.cache/deeptutor-fork}"
-MSG="${MSG:-同步扩展仓库}"
+# 不传 MSG 时，提交信息取扩展仓库最新提交的标题，这样发布分支的历史上能一眼
+# 看出这次同步带来了什么；只写「同步扩展仓库」等于什么都没说。
+MSG="${MSG:-}"
 GIT_CRED="${GIT_CRED:-!gh auth git-credential}"
 
 git_fork() { git -C "$WORK_DIR" "$@"; }
@@ -62,7 +64,10 @@ fi
 echo "    有差异，逐文件如下："
 git_fork diff --stat "$cur_tree" "$ext_tree" | sed 's/^/      /'
 
-echo "==> 用 git subtree 合并"
+if [ -z "$MSG" ]; then
+  MSG="同步扩展仓库：$(git_fork log -1 --format=%s FETCH_HEAD)"
+fi
+echo "==> 用 git subtree 合并，提交信息为「$MSG」"
 if ! git_fork subtree pull --prefix=ext "$EXT_SSH" "$EXT_BRANCH" -m "$MSG"; then
   echo ""
   echo "子树合并没能自动完成，已停在冲突处，没有产生提交。"
