@@ -6,6 +6,7 @@
 #   make verify             接入自检（升级后必跑）
 #   make upgrade VERSION=v1.5.8   升级到指定版本并重新集成
 #   make patches            把本地源码改动导出成补丁文件备查
+#   make publish            把前端改动发布到 GitHub 的发布分支（只备提交，不推送）
 #
 # 目录分工：
 #   ~/DeepTutor-src   DeepTutor 官方源码，一个 git 工作树，跟随上游
@@ -33,13 +34,22 @@ PIDFILE    := $(LOG_DIR)/deeptutor.pid
 LOCAL_BRANCH := local
 BASE_TAG     := upstream-base
 
-.PHONY: help install start stop restart status health logs verify upgrade patches wait-port \
+# 发布用：fork 指向我们的派生仓库，发布分支上还带着 ext/ 子树与课程、文档，
+# 与只放前端改动的 local 分支是两回事，见文件末尾 publish 目标的说明。
+FORK_REMOTE := fork
+FORK_URL    := https://github.com/netbuddy/DeepTutor.git
+FORK_BRANCH := feat/course-and-notebook
+PUB_BRANCH  := publish
+PUB_TREE    := /tmp/deeptutor-publish
+
+.PHONY: help install start stop restart status health logs verify upgrade patches wait-port publish \
         kernel-start kernel-stop kernel-status kernel-logs kernel-build
 
 help:
 	@echo "make install | start | stop | restart | status | health | verify"
 	@echo "make upgrade VERSION=v1.5.8    升级 DeepTutor 并重新集成扩展"
 	@echo "make patches                   导出本地源码改动"
+	@echo "make publish [MSG=说明]        把前端改动发布到 GitHub 的发布分支"
 	@echo "make kernel-start | kernel-stop | kernel-status | kernel-logs   学生代码的执行容器"
 	@echo ""
 	@echo "应用地址： http://$(LAN_IP):$(FRONT_PORT)/"
@@ -191,3 +201,17 @@ patches:
 	@rm -f $(EXT)/patches/*.patch
 	@cd $(SRC) && git format-patch -o $(EXT)/patches $(BASE_TAG)..$(LOCAL_BRANCH) >/dev/null
 	@ls -1 $(EXT)/patches/*.patch 2>/dev/null | sed 's|.*/|  |' || echo "  （没有需要导出的提交）"
+
+# ── 把前端改动发布到 GitHub ──────────────────────────────────────────────
+#
+# 实现在 bin/publish.sh，那里有完整说明：为什么 local 与发布分支不能合并、
+# 发布怎么按内容比对、以及推送为什么要换台机器执行。
+#
+#   用法：make publish                     提交信息用默认的
+#         make publish MSG="一句话说明"    自己写提交信息
+
+publish:
+	@SRC=$(SRC) LOCAL_BRANCH=$(LOCAL_BRANCH) FORK_REMOTE=$(FORK_REMOTE) \
+	  FORK_URL=$(FORK_URL) FORK_BRANCH=$(FORK_BRANCH) PUB_BRANCH=$(PUB_BRANCH) \
+	  PUB_TREE=$(PUB_TREE) LAN_IP=$(LAN_IP) $(if $(MSG),MSG="$(MSG)",) \
+	  bash $(EXT)/bin/publish.sh
