@@ -31,6 +31,12 @@ export interface BookSidebarProps {
   rebuilding?: boolean;
 }
 
+/** 这本书是不是从课程目录导入的。是的话「重建」的含义不同，见 page.tsx。 */
+function isImportedCourse(book: Book | null): boolean {
+  const meta = (book?.metadata || {}) as Record<string, unknown>;
+  return meta.origin === "course_import" && Boolean(meta.course_slug);
+}
+
 export default function BookSidebar({
   book,
   onBackToLibrary,
@@ -126,6 +132,11 @@ export default function BookSidebar({
           type="button"
           onClick={onRebuild}
           disabled={rebuilding}
+          title={
+            isImportedCourse(book)
+              ? "按课程原稿重新读一遍，页面内容会刷新，模型不会改写任何内容"
+              : "删除现有页面，让模型按大纲重新生成"
+          }
           className="inline-flex items-center justify-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-xs font-medium text-[var(--muted-foreground)] hover:border-[var(--primary)]/40 hover:text-[var(--primary)] disabled:opacity-60"
         >
           {rebuilding ? (
@@ -133,7 +144,7 @@ export default function BookSidebar({
           ) : (
             <RotateCcw className="h-3.5 w-3.5" />
           )}
-          {t("Rebuild book")}
+          {isImportedCourse(book) ? "从原稿重新导入" : t("Rebuild book")}
         </button>
       )}
 
